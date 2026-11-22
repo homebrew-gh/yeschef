@@ -35,6 +35,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -212,12 +214,24 @@ fun RecipeGrid(
             }
             sections.forEach { section ->
                 if (section.title.isNotEmpty()) {
+                    // The whole book: each chapter is a header and a shelf of cards to swipe through.
                     item(span = { GridItemSpan(maxLineSpan) }, key = "chapter-" + section.title) {
-                        ChapterHeader(section.title, section.recipes.size)
+                        Column {
+                            ChapterHeader(section.title, section.recipes.size) { chapter = section.title }
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                contentPadding = PaddingValues(top = 10.dp),
+                            ) {
+                                items(section.recipes, key = { it.id }) { recipe ->
+                                    RecipeCard(recipe, serverUrl, recipe.slug == selectedSlug, today, Modifier.width(176.dp)) { onOpen(recipe.slug) }
+                                }
+                            }
+                        }
                     }
-                }
-                items(section.recipes, key = { it.id }) { recipe ->
-                    RecipeCard(recipe, serverUrl, recipe.slug == selectedSlug, today) { onOpen(recipe.slug) }
+                } else {
+                    items(section.recipes, key = { it.id }) { recipe ->
+                        RecipeCard(recipe, serverUrl, recipe.slug == selectedSlug, today) { onOpen(recipe.slug) }
+                    }
                 }
             }
         }
@@ -262,16 +276,16 @@ private fun ChapterTabs(chapters: List<String?>, selected: String?, onPick: (Str
 }
 
 @Composable
-private fun ChapterHeader(title: String, count: Int) {
+private fun ChapterHeader(title: String, count: Int, onOpen: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     Column(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 2.dp)) {
         Row(verticalAlignment = Alignment.Bottom) {
             Text(title, style = MaterialTheme.typography.headlineSmall, color = colors.onSurface, modifier = Modifier.weight(1f))
             Text(
-                if (count == 1) "1 recipe" else "$count recipes",
+                (if (count == 1) "1 recipe" else "$count recipes") + "  ›",
                 style = MaterialTheme.typography.labelMedium,
-                color = colors.outline,
-                modifier = Modifier.padding(bottom = 4.dp),
+                color = colors.primary,
+                modifier = Modifier.clip(MaterialTheme.shapes.small).clickable(onClick = onOpen).padding(start = 8.dp, bottom = 4.dp, top = 4.dp),
             )
         }
         Spacer(Modifier.height(6.dp))
@@ -306,13 +320,21 @@ private fun SortButton(sort: Cookbook.Sort, chapterView: Boolean, onSort: (Cookb
 }
 
 @Composable
-private fun RecipeCard(recipe: RecipeEntity, serverUrl: String?, selected: Boolean, today: LocalDate, onClick: () -> Unit) {
+private fun RecipeCard(
+    recipe: RecipeEntity,
+    serverUrl: String?,
+    selected: Boolean,
+    today: LocalDate,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
     val colors = MaterialTheme.colorScheme
     Card(
         onClick = onClick,
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = if (selected) colors.primaryContainer else colors.surfaceContainerLow),
         border = if (selected) BorderStroke(2.dp, colors.primary) else null,
+        modifier = modifier,
     ) {
         RecipeImage(serverUrl, recipe.id, Modifier.fillMaxWidth().aspectRatio(4f / 3f))
         Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
@@ -330,11 +352,11 @@ private fun RecipeCard(recipe: RecipeEntity, serverUrl: String?, selected: Boole
                     Spacer(Modifier.width(4.dp))
                     Text(
                         recipe.totalTime, style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
                     )
-                    Spacer(Modifier.width(8.dp))
+                } else {
+                    Spacer(Modifier.weight(1f))
                 }
-                Spacer(Modifier.weight(1f))
                 recipe.rating?.takeIf { it > 0 }?.let { rating ->
                     Icon(Icons.Filled.Star, contentDescription = null, tint = colors.tertiary, modifier = Modifier.size(15.dp))
                     Spacer(Modifier.width(2.dp))
