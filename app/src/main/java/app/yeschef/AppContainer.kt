@@ -3,6 +3,7 @@ package app.yeschef
 import android.content.Context
 import app.yeschef.data.Repository
 import app.yeschef.data.ServerConfig
+import app.yeschef.data.ThemeMode
 import app.yeschef.data.SettingsStore
 import app.yeschef.data.cook.TimerManager
 import app.yeschef.data.local.YesChefDb
@@ -24,6 +25,14 @@ class AppContainer(context: Context) {
 
     private val _config = MutableStateFlow(runBlocking { settings.config.first() })
     val config: StateFlow<ServerConfig?> = _config.asStateFlow()
+
+    private val _theme = MutableStateFlow(runBlocking { settings.themeMode.first() })
+    val themeMode: StateFlow<ThemeMode> = _theme.asStateFlow()
+
+    suspend fun setTheme(mode: ThemeMode) {
+        settings.saveTheme(mode)
+        _theme.value = mode
+    }
 
     val httpClient: OkHttpClient = ApiFactory.httpClient { _config.value?.token }
 
