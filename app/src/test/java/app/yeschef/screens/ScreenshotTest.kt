@@ -135,7 +135,13 @@ class ScreenshotTest {
         }
     }
 
-    @Test fun tabletRecipes() {
+    /** Tablet: the whole cookbook full width, in chapter sections. */
+    @Test fun tabletRecipes() = tablet { RecipeGrid(Sample.recipes, null, null, {}, actions = { SyncIcon() }, today = Sample.today) }
+
+    /** Tablet: a recipe opened full screen, with a back arrow. */
+    @Test fun tabletRecipeDetail() = tablet { Detail(cookMode = false) }
+
+    private fun tablet(content: @Composable () -> Unit) {
         paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_C)
         paparazzi.snapshot {
             YesChefTheme {
@@ -145,9 +151,7 @@ class ScreenshotTest {
                             NavigationRailItem(selected = i == 1, onClick = {}, icon = { Icon(icon, null) }, label = { Text(label) })
                         }
                     }
-                    RecipeGrid(Sample.recipes, null, "classic-lasagna", {}, actions = { SyncIcon() }, today = Sample.today, modifier = Modifier.width(400.dp).fillMaxHeight())
-                    VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Box(Modifier.weight(1f)) { Detail(cookMode = false, withBack = false) }
+                    Box(Modifier.weight(1f)) { content() }
                 }
             }
         }

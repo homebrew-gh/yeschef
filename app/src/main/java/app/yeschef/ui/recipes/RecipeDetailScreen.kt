@@ -1,6 +1,8 @@
 package app.yeschef.ui.recipes
 
 import android.net.Uri
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import app.yeschef.data.cook.formatAmount
 import app.yeschef.data.cook.baseServings
 import app.yeschef.data.cook.scaleIngredient
@@ -273,7 +275,11 @@ fun RecipeDetailContent(
             return@Scaffold
         }
         val stepIngredients = remember(detail, cookMode) { if (cookMode) stepIngredientsFor(detail) else emptyList() }
-        LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = 32.dp)) {
+        // On the tablet the recipe keeps a readable width, centred.
+        LazyColumn(
+            Modifier.padding(padding).fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = 860.dp),
+            contentPadding = PaddingValues(bottom = 32.dp),
+        ) {
             if (!cookMode) {
                 item {
                     Box(

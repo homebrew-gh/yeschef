@@ -45,9 +45,9 @@ object Cookbook {
     )
 
     enum class Sort(val label: String) {
-        Chapters("Cookbook order"),
+        Chapters("By chapter"),
         AtoZ("A to Z"),
-        NotLately("Not made in a while"),
+        NotLately("Not made lately"),
         Newest("Newest"),
         TopRated("Top rated"),
         Quickest("Quickest"),
