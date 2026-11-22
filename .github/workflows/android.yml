@@ -54,7 +54,7 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && env.YESCHEF_KEYSTORE != ''
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ github.run_number }}
+          tag_name: v0.2.${{ github.run_number }}
           name: YesChef 0.2.${{ github.run_number }}
           body: Built from ${{ github.sha }}. Install over the previous version to update.
           files: yeschef-*.apk

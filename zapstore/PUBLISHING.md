@@ -12,7 +12,7 @@ can't change who owns the listing.
 ## Before you start
 
 - The release signing secrets are set (see "Release signing key" in the README) and at least one
-  `build-N` release with a `yeschef-*.apk` exists on the Releases page.
+  `v0.2.N` release with a `yeschef-*.apk` exists on the Releases page.
 - You have `yeschef.jks` and its password on your computer.
 - You can sign with your Nostr key. A bunker (NIP-46, for example Amber on Android or nsec.app)
   is safest because the key never touches your computer.
