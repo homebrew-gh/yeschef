@@ -7,6 +7,7 @@ import app.yeschef.data.local.ShoppingItemEntity
 import app.yeschef.data.local.ShoppingListEntity
 import app.yeschef.data.local.YesChefDb
 import app.yeschef.data.remote.LastMadeBody
+import kotlinx.serialization.json.JsonPrimitive
 import app.yeschef.data.remote.MealieApi
 import app.yeschef.data.remote.MealieJson
 import app.yeschef.data.remote.NewShoppingItem
@@ -97,6 +98,45 @@ class Repository(
         dao.enqueue(PendingOpEntity(kind = PendingOpEntity.CREATE, itemId = id, listId = listId))
     }
 
+    /** Takes everything ticked off this list. Works offline; deletes reach Mealie on the next sync. */
+    suspend fun clearChecked(listId: String) {
+        val dao = db.shopping()
+        for (item in dao.checkedItems(listId)) {
+            dao.deleteItem(item.id)
+            if (item.rawJson == null) {
+                dao.deleteOpsFor(item.id) // never reached the server, so nothing to delete there
+            } else {
+                dao.enqueue(PendingOpEntity(kind = PendingOpEntity.DELETE_ITEM, itemId = item.id, listId = listId))
+            }
+        }
+    }
+
+    /** Unticks everything on this list, for lists that get reused (staples). */
+    suspend fun uncheckAll(listId: String) {
+        for (item in db.shopping().checkedItems(listId)) setChecked(item.id, false)
+    }
+
+    // List management needs the server: Mealie owns the list ids.
+
+    suspend fun createList(name: String) {
+        val api = apiProvider() ?: error("Not connected")
+        api.createShoppingList(JsonObject(mapOf("name" to JsonPrimitive(name.trim()))))
+        sync()
+    }
+
+    suspend fun renameList(id: String, name: String) {
+        val api = apiProvider() ?: error("Not connected")
+        val raw = api.shoppingListRaw(id)
+        api.updateShoppingList(id, JsonObject(raw + ("name" to JsonPrimitive(name.trim()))))
+        sync()
+    }
+
+    suspend fun deleteList(id: String) {
+        val api = apiProvider() ?: error("Not connected")
+        api.deleteShoppingList(id)
+        sync()
+    }
+
     /** Marks a recipe as cooked now. Shown at once; sent to Mealie with the next sync. */
     suspend fun markCooked(slug: String) {
         val now = java.time.OffsetDateTime.now().toString()
@@ -155,6 +195,7 @@ class Repository(
             try {
                 when {
                     op.kind == PendingOpEntity.LAST_MADE -> api.setLastMade(op.itemId, LastMadeBody(op.listId))
+                    op.kind == PendingOpEntity.DELETE_ITEM -> api.deleteShoppingItem(op.itemId)
                     item == null -> Unit
                     op.kind == PendingOpEntity.CREATE -> {
                         api.createShoppingItem(

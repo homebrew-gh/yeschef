@@ -5,6 +5,7 @@ import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import okhttp3.ResponseBody
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.Field
 import retrofit2.http.FormUrlEncoded
 import retrofit2.http.GET
@@ -62,6 +63,22 @@ interface MealieApi {
 
     @POST("households/shopping/items")
     suspend fun createShoppingItem(@Body item: NewShoppingItem): ResponseBody
+
+    @DELETE("households/shopping/items/{id}")
+    suspend fun deleteShoppingItem(@Path("id") id: String): ResponseBody
+
+    @POST("households/shopping/lists")
+    suspend fun createShoppingList(@Body body: JsonObject): ResponseBody
+
+    /** The list exactly as Mealie returns it, so a rename can send it back whole. */
+    @GET("households/shopping/lists/{id}")
+    suspend fun shoppingListRaw(@Path("id") id: String): JsonObject
+
+    @PUT("households/shopping/lists/{id}")
+    suspend fun updateShoppingList(@Path("id") id: String, @Body body: JsonObject): ResponseBody
+
+    @DELETE("households/shopping/lists/{id}")
+    suspend fun deleteShoppingList(@Path("id") id: String): ResponseBody
 
     @PUT("households/shopping/items/{id}")
     suspend fun updateShoppingItem(@Path("id") id: String, @Body item: JsonObject): ResponseBody

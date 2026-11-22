@@ -96,6 +96,12 @@ abstract class ShoppingDao {
     @Query("SELECT COUNT(*) FROM pending_ops")
     abstract fun observePendingCount(): Flow<Int>
 
+    @Query("SELECT * FROM shopping_items WHERE listId = :listId AND checked = 1")
+    abstract suspend fun checkedItems(listId: String): List<ShoppingItemEntity>
+
+    @Query("DELETE FROM pending_ops WHERE itemId = :itemId")
+    abstract suspend fun deleteOpsFor(itemId: String)
+
     @Query("SELECT COUNT(*) FROM pending_ops WHERE itemId = :itemId")
     abstract suspend fun pendingCountFor(itemId: String): Int
 
