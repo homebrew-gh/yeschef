@@ -43,7 +43,15 @@ data class RecipeSummaryDto(
     val recipeYield: String? = null,
     val rating: Double? = null,
     val updatedAt: String? = null,
+    val dateAdded: String? = null,
+    /** When it was last cooked ("I made this"), ISO date-time. */
+    val lastMade: String? = null,
+    val recipeCategory: List<NamedDto> = emptyList(),
+    val tags: List<NamedDto> = emptyList(),
 )
+
+@Serializable
+data class LastMadeBody(val timestamp: String)
 
 @Serializable
 data class RecipeDetailDto(
@@ -58,6 +66,7 @@ data class RecipeDetailDto(
     val recipeYield: String? = null,
     val recipeServings: Double? = null,
     val orgURL: String? = null,
+    val lastMade: String? = null,
     val recipeIngredient: List<IngredientDto> = emptyList(),
     val recipeInstructions: List<StepDto> = emptyList(),
 )

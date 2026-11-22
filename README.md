@@ -33,6 +33,20 @@ Screenshots of every main screen are rendered by Paparazzi (`app/src/test/java/.
 committed by CI to `app/src/test/snapshots/images` on each pull request. Locally:
 `./gradlew recordPaparazziDebug`.
 
+## The cookbook: categories and tags
+
+The Recipes tab reads like a cookbook. Its chapters come from Mealie **categories**, and its filter chips come from **tags**. Give each recipe one category and as many tags as fit. This scheme is what the app expects, and it's what to tell an AI assistant that tags the library:
+
+| Mealie field | Use it for | Values |
+| --- | --- | --- |
+| Category (one per recipe) | Chapter | Mains, Sides, Soups & Salads, Breakfast, Desserts, Baking, Starters & Snacks, Drinks, Sauces & Basics |
+| Tags: protein | Filter chips | Chicken, Beef, Pork, Lamb, Turkey, Seafood, Vegetarian, Vegan |
+| Tags: style | Search and future filters | Quick (under 30 min), Slow cooker, Grill, One pot, Make ahead, Weeknight, Freezer friendly |
+
+Common alternatives are understood too. "Main course", "Dinner" and "Entree" go under Mains, and "Side dish" goes under Sides. "Fish" and "Shrimp" count as Seafood. Any other category becomes a chapter of its own, after the standard ones. Recipes with no category go under "More recipes".
+
+**Last cooked** is Mealie's "last made" date. When you leave cook mode the app asks "Mark as cooked?", and the date then shows on the recipe card. Sort by "Not made in a while" to find old favourites. The dice button picks a random recipe from what's on screen and skips anything cooked in the last two weeks.
+
 ## How sync works
 
 Mealie has no "changed since" query for lists and meal plans, so each sync pushes queued edits

@@ -14,6 +14,14 @@ data class RecipeEntity(
     val recipeYield: String?,
     /** Full recipe JSON from Mealie, cached once the recipe has been opened or planned. */
     val detailJson: String?,
+    /** Mealie category names, newline-separated. Categories are the cookbook's chapters. */
+    val categories: String = "",
+    /** Mealie tag names, newline-separated (protein, style). */
+    val tags: String = "",
+    val rating: Double? = null,
+    /** ISO date-time it was last cooked, or null if never. */
+    val lastMade: String? = null,
+    val dateAdded: String? = null,
 )
 
 @Entity(tableName = "shopping_lists")
@@ -70,5 +78,7 @@ data class PendingOpEntity(
     companion object {
         const val SET_CHECKED = "set_checked"
         const val CREATE = "create"
+        /** Mark a recipe cooked: itemId is the slug, listId holds the ISO timestamp. */
+        const val LAST_MADE = "last_made"
     }
 }

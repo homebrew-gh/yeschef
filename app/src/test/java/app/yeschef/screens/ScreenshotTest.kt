@@ -64,7 +64,15 @@ class ScreenshotTest {
         }
     }
 
-    @Test fun recipes() = phone(tab = 1) { RecipeGrid(Sample.recipes, null, null, {}, actions = { SyncIcon() }) }
+    @Test fun recipes() = phone(tab = 1) { RecipeGrid(Sample.recipes, null, null, {}, actions = { SyncIcon() }, today = Sample.today) }
+
+    @Test fun recipesSides() = phone(tab = 1) {
+        RecipeGrid(Sample.recipes, null, null, {}, actions = { SyncIcon() }, today = Sample.today, initialChapter = "Sides")
+    }
+
+    @Test fun recipesMainsSeafood() = phone(tab = 1, dark = true) {
+        RecipeGrid(Sample.recipes, null, null, {}, actions = { SyncIcon() }, today = Sample.today, initialChapter = "Mains", initialProtein = "Seafood")
+    }
 
     @Test fun recipeDetail() = phone(tab = 1) { Detail(cookMode = false) }
 
@@ -113,7 +121,7 @@ class ScreenshotTest {
                             NavigationRailItem(selected = i == 1, onClick = {}, icon = { Icon(icon, null) }, label = { Text(label) })
                         }
                     }
-                    RecipeGrid(Sample.recipes, null, "lasagna", {}, actions = { SyncIcon() }, modifier = Modifier.width(400.dp).fillMaxHeight())
+                    RecipeGrid(Sample.recipes, null, "classic-lasagna", {}, actions = { SyncIcon() }, today = Sample.today, modifier = Modifier.width(400.dp).fillMaxHeight())
                     VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Box(Modifier.weight(1f)) { Detail(cookMode = false, withBack = false) }
                 }
@@ -173,6 +181,7 @@ private fun Detail(cookMode: Boolean, withBack: Boolean = true) = RecipeDetailCo
     cookMode = cookMode,
     onToggleCookMode = {},
     onBack = if (withBack) ({}) else null,
+    lastCooked = "Cooked 7 weeks ago",
     onCustomTimer = {},
     onStartTimer = { _, _ -> },
     onTakePhoto = {},
@@ -207,13 +216,19 @@ private object Sample {
         row("12", "Coffee beans", null),
     )
 
+    private fun recipe(id: String, name: String, time: String?, cats: String, tags: String, lastMade: String? = null, rating: Double? = null) =
+        RecipeEntity(id, name.lowercase().replace(' ', '-'), name, null, time, null, null, cats, tags, rating, lastMade)
+
     val recipes = listOf(
-        RecipeEntity("r1", "banana-bread", "Banana bread", null, "1 hour 10 minutes", null, null),
-        RecipeEntity("r2", "chicken-tacos", "Chicken tacos with lime crema", null, "35 minutes", null, null),
-        RecipeEntity("r3", "lasagna", "Classic lasagna", null, "1 hour 30 minutes", null, null),
-        RecipeEntity("r4", "miso-salmon", "Miso glazed salmon", null, "25 minutes", null, null),
-        RecipeEntity("r5", "shakshuka", "Shakshuka", null, "40 minutes", null, null),
-        RecipeEntity("r6", "tomato-soup", "Roasted tomato soup", null, "50 minutes", null, null),
+        recipe("r1", "Banana bread", "1 hour 10 minutes", "Baking", "Vegetarian", "2026-09-02T10:00:00Z", 5.0),
+        recipe("r2", "Chicken tacos with lime crema", "35 minutes", "Mains", "Chicken\nQuick", "2026-11-18T19:00:00Z", 4.5),
+        recipe("r3", "Classic lasagna", "1 hour 30 minutes", "Mains", "Beef\nMake ahead", "2026-10-04T19:00:00Z", 5.0),
+        recipe("r4", "Miso glazed salmon", "25 minutes", "Mains", "Seafood\nQuick", null, 4.0),
+        recipe("r5", "Shakshuka", "40 minutes", "Breakfast", "Vegetarian", "2026-11-21T09:00:00Z"),
+        recipe("r6", "Roasted tomato soup", "50 minutes", "Soups & Salads", "Vegetarian", "2026-02-11T18:00:00Z"),
+        recipe("r7", "Garlic green beans", "15 minutes", "Sides", "Vegetarian\nQuick", "2026-11-09T18:00:00Z", 4.0),
+        recipe("r8", "Crispy smashed potatoes", "50 minutes", "Sides", "Vegetarian", null, 5.0),
+        recipe("r9", "Herb rice pilaf", "30 minutes", "Sides", "Vegan"),
     )
 
     val lasagna = RecipeDetailDto(

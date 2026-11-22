@@ -6,6 +6,7 @@ import app.yeschef.data.local.RecipeEntity
 import app.yeschef.data.local.ShoppingItemEntity
 import app.yeschef.data.local.ShoppingListEntity
 import app.yeschef.data.local.YesChefDb
+import app.yeschef.data.remote.LastMadeBody
 import app.yeschef.data.remote.MealieApi
 import app.yeschef.data.remote.MealieJson
 import app.yeschef.data.remote.NewShoppingItem
@@ -96,6 +97,13 @@ class Repository(
         dao.enqueue(PendingOpEntity(kind = PendingOpEntity.CREATE, itemId = id, listId = listId))
     }
 
+    /** Marks a recipe as cooked now. Shown at once; sent to Mealie with the next sync. */
+    suspend fun markCooked(slug: String) {
+        val now = java.time.OffsetDateTime.now().toString()
+        db.recipes().setLastMade(slug, now)
+        db.shopping().enqueue(PendingOpEntity(kind = PendingOpEntity.LAST_MADE, itemId = slug, listId = now))
+    }
+
     // ---- Sync ----
 
     suspend fun sync(): SyncState = syncMutex.withLock {
@@ -146,6 +154,7 @@ class Repository(
             val item = dao.item(op.itemId)
             try {
                 when {
+                    op.kind == PendingOpEntity.LAST_MADE -> api.setLastMade(op.itemId, LastMadeBody(op.listId))
                     item == null -> Unit
                     op.kind == PendingOpEntity.CREATE -> {
                         api.createShoppingItem(
@@ -173,7 +182,12 @@ class Repository(
     private suspend fun pull(api: MealieApi) {
         // Recipes (summaries; details are cached on demand and for planned meals)
         val recipes = api.recipes().items.map {
-            RecipeEntity(it.id, it.slug, it.name, it.description, it.totalTime, it.recipeYield, detailJson = null)
+            RecipeEntity(
+                it.id, it.slug, it.name, it.description, it.totalTime, it.recipeYield, detailJson = null,
+                categories = it.recipeCategory.mapNotNull { c -> c.name }.joinToString("\n"),
+                tags = it.tags.mapNotNull { t -> t.name }.joinToString("\n"),
+                rating = it.rating, lastMade = it.lastMade, dateAdded = it.dateAdded,
+            )
         }
         db.recipes().replaceSummaries(recipes)
 

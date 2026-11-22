@@ -11,6 +11,7 @@ import retrofit2.http.GET
 import retrofit2.http.Multipart
 import retrofit2.http.Part
 import retrofit2.http.POST
+import retrofit2.http.PATCH
 import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
@@ -39,6 +40,10 @@ interface MealieApi {
 
     @GET("recipes/{slug}")
     suspend fun recipe(@Path("slug") slug: String): RecipeDetailDto
+
+    /** Records that the recipe was cooked ("I made this" in Mealie). */
+    @PATCH("recipes/{slug}/last-made")
+    suspend fun setLastMade(@Path("slug") slug: String, @Body body: LastMadeBody): ResponseBody
 
     /** Replaces a recipe's photo. Mealie makes the smaller sizes itself. */
     @Multipart

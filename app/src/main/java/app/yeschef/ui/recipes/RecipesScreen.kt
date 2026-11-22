@@ -1,6 +1,26 @@
 package app.yeschef.ui.recipes
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.Casino
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.sp
+import app.yeschef.data.Cookbook
+import java.time.LocalDate
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -83,7 +103,7 @@ fun RecipesScreen(container: AppContainer, openSlug: String?, onOpen: (String?) 
     }
 }
 
-/** Stateless recipe grid, also used for screenshots. */
+/** Stateless cookbook view of the recipes, also used for screenshots. */
 @Composable
 fun RecipeGrid(
     recipes: List<RecipeEntity>,
@@ -92,16 +112,37 @@ fun RecipeGrid(
     onOpen: (String) -> Unit,
     actions: @Composable () -> Unit,
     modifier: Modifier = Modifier,
+    today: LocalDate = LocalDate.now(),
+    initialChapter: String? = null,
+    initialProtein: String? = null,
 ) {
     var query by rememberSaveable { mutableStateOf("") }
-    val filtered = remember(recipes, query) {
-        if (query.isBlank()) recipes else recipes.filter {
-            it.name.contains(query, ignoreCase = true) || it.description.orEmpty().contains(query, ignoreCase = true)
-        }
+    var chapter by rememberSaveable { mutableStateOf(initialChapter) }
+    var protein by rememberSaveable { mutableStateOf(initialProtein) }
+    var sort by rememberSaveable { mutableStateOf(Cookbook.Sort.Chapters) }
+    val chapters = remember(recipes) { Cookbook.chapterOrder(recipes) }
+    // Only offer protein chips for recipes in the chapter being looked at.
+    val proteins = remember(recipes, chapter) {
+        val inChapter = Cookbook.filter(recipes, "", chapter, null).flatMap(Cookbook::proteinsOf).toSet()
+        Cookbook.proteins.map { it.first }.filter { it in inChapter }
     }
+    val shown = remember(recipes, query, chapter, protein) { Cookbook.filter(recipes, query, chapter, protein) }
+    // Inside one chapter there's nothing to group, so cookbook order is just A to Z.
+    val sections = remember(shown, sort, chapter) {
+        Cookbook.sections(shown, if (chapter != null && sort == Cookbook.Sort.Chapters) Cookbook.Sort.AtoZ else sort)
+    }
+    val colors = MaterialTheme.colorScheme
+
     Scaffold(
-        topBar = { YcTopBar("Recipes", actions = { actions() }) },
-        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            YcTopBar("Cookbook", actions = {
+                IconButton(enabled = shown.isNotEmpty(), onClick = { surprise(shown, today)?.let { onOpen(it.slug) } }) {
+                    Icon(Icons.Filled.Casino, contentDescription = "Surprise me")
+                }
+                actions()
+            })
+        },
+        containerColor = colors.background,
         modifier = modifier,
     ) { padding ->
         LazyVerticalGrid(
@@ -120,22 +161,152 @@ fun RecipeGrid(
                     singleLine = true,
                     shape = CircleShape,
                     colors = OutlinedTextFieldDefaults.colors(
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+                        unfocusedContainerColor = colors.surfaceContainer,
+                        focusedContainerColor = colors.surfaceContainerLowest,
                         unfocusedBorderColor = Color.Transparent,
                     ),
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                 )
             }
-            items(filtered, key = { it.id }) { recipe ->
-                RecipeCard(recipe, serverUrl, recipe.slug == selectedSlug) { onOpen(recipe.slug) }
+            if (chapters.size > 1) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    ChapterTabs(listOf<String?>(null) + chapters, chapter) { picked ->
+                        chapter = picked
+                        if (protein != null && picked != null &&
+                            Cookbook.filter(recipes, "", picked, protein).isEmpty()
+                        ) protein = null
+                    }
+                }
+            }
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        proteins.forEach { p ->
+                            FilterChip(
+                                selected = protein == p,
+                                onClick = { protein = if (protein == p) null else p },
+                                label = { Text(p) },
+                                shape = CircleShape,
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = colors.tertiaryContainer,
+                                    selectedLabelColor = colors.onTertiaryContainer,
+                                ),
+                            )
+                        }
+                    }
+                    SortButton(sort, chapterView = chapter == null) { sort = it }
+                }
+            }
+            if (shown.isEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Text(
+                        if (recipes.isEmpty()) "No recipes yet. Add some in Mealie, or ask your agent to." else "Nothing matches.",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = colors.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 32.dp),
+                    )
+                }
+            }
+            sections.forEach { section ->
+                if (section.title.isNotEmpty()) {
+                    item(span = { GridItemSpan(maxLineSpan) }, key = "chapter-" + section.title) {
+                        ChapterHeader(section.title, section.recipes.size)
+                    }
+                }
+                items(section.recipes, key = { it.id }) { recipe ->
+                    RecipeCard(recipe, serverUrl, recipe.slug == selectedSlug, today) { onOpen(recipe.slug) }
+                }
+            }
+        }
+    }
+}
+
+/** A random recipe from what's shown, preferring ones not cooked in the last two weeks. */
+private fun surprise(shown: List<RecipeEntity>, today: LocalDate): RecipeEntity? {
+    val fresh = shown.filter { r ->
+        val text = Cookbook.lastCookedText(r.lastMade, today)
+        text == null || !(text == "Cooked today" || text == "Cooked yesterday" || text.endsWith("days ago"))
+    }
+    return (fresh.ifEmpty { shown }).randomOrNull()
+}
+
+@Composable
+private fun ChapterTabs(chapters: List<String?>, selected: String?, onPick: (String?) -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(20.dp),
+    ) {
+        chapters.forEach { c ->
+            val on = c == selected
+            Column(
+                Modifier.clip(MaterialTheme.shapes.small).clickable { onPick(c) }.padding(horizontal = 2.dp, vertical = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    c ?: "All",
+                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp, lineHeight = 26.sp),
+                    color = if (on) colors.primary else colors.onSurfaceVariant.copy(alpha = 0.7f),
+                )
+                Spacer(Modifier.height(4.dp))
+                Box(
+                    Modifier.height(2.dp).width(28.dp)
+                        .background(if (on) colors.tertiary else Color.Transparent, RoundedCornerShape(1.dp)),
+                )
             }
         }
     }
 }
 
 @Composable
-private fun RecipeCard(recipe: RecipeEntity, serverUrl: String?, selected: Boolean, onClick: () -> Unit) {
+private fun ChapterHeader(title: String, count: Int) {
+    val colors = MaterialTheme.colorScheme
+    Column(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 2.dp)) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(title, style = MaterialTheme.typography.headlineSmall, color = colors.onSurface, modifier = Modifier.weight(1f))
+            Text(
+                if (count == 1) "1 recipe" else "$count recipes",
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.outline,
+                modifier = Modifier.padding(bottom = 4.dp),
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.width(36.dp).height(2.dp).background(colors.tertiary))
+            Box(Modifier.weight(1f).height(1.dp).background(colors.outlineVariant))
+        }
+    }
+}
+
+@Composable
+private fun SortButton(sort: Cookbook.Sort, chapterView: Boolean, onSort: (Cookbook.Sort) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        TextButton(onClick = { open = true }) {
+            Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(if (sort == Cookbook.Sort.Chapters && !chapterView) Cookbook.Sort.AtoZ.label else sort.label, maxLines = 1)
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            Cookbook.Sort.entries
+                .filter { chapterView || it != Cookbook.Sort.Chapters }
+                .forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(option.label) },
+                        trailingIcon = { if (option == sort) Icon(Icons.Filled.Check, contentDescription = null) },
+                        onClick = { open = false; onSort(option) },
+                    )
+                }
+        }
+    }
+}
+
+@Composable
+private fun RecipeCard(recipe: RecipeEntity, serverUrl: String?, selected: Boolean, today: LocalDate, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     Card(
         onClick = onClick,
@@ -152,14 +323,32 @@ private fun RecipeCard(recipe: RecipeEntity, serverUrl: String?, selected: Boole
                 overflow = TextOverflow.Ellipsis,
                 minLines = 2,
             )
-            if (!recipe.totalTime.isNullOrBlank()) {
-                Spacer(Modifier.size(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            Spacer(Modifier.size(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (!recipe.totalTime.isNullOrBlank()) {
                     Icon(Icons.Filled.Schedule, contentDescription = null, tint = colors.tertiary, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text(recipe.totalTime, style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
+                    Text(
+                        recipe.totalTime, style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+                Spacer(Modifier.weight(1f))
+                recipe.rating?.takeIf { it > 0 }?.let { rating ->
+                    Icon(Icons.Filled.Star, contentDescription = null, tint = colors.tertiary, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(2.dp))
+                    Text(formatRating(rating), style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
                 }
             }
+            Text(
+                Cookbook.lastCookedText(recipe.lastMade, today) ?: "Not cooked yet",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (recipe.lastMade == null) colors.outline else colors.primary,
+                modifier = Modifier.padding(top = 4.dp),
+            )
         }
     }
 }
+
+private fun formatRating(r: Double): String = if (r % 1.0 == 0.0) r.toInt().toString() else "%.1f".format(r)
