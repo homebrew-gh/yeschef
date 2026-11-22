@@ -93,6 +93,12 @@ class RecipeEditingTest {
         assertNull(RecipeDraft.of(loaf).copy(servings = "6").changesFrom(loaf)!!.recipeYield)
     }
 
+    @Test fun servingsFromYieldWhenUnset() {
+        val old = recipe.copy(recipeServings = 0.0, recipeYield = "6 servings")
+        assertEquals("6", RecipeDraft.of(old).servings)
+        assertNull(RecipeDraft.of(old).changesFrom(old))
+    }
+
     @Test fun onlyNewAndChangedLinesAreParsed() {
         val d = RecipeDraft.of(recipe)
         val edited = d.copy(ingredients = listOf(d.ingredients[1], d.ingredients[0].copy(text = "2 lb ground beef"), DraftIngredient("1 onion, diced")))

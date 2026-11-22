@@ -122,7 +122,8 @@ data class RecipeDraft(
             return RecipeDraft(
                 name = detail.name,
                 description = detail.description.orEmpty(),
-                servings = detail.recipeServings?.takeIf { it > 0 }?.let(::formatNumber).orEmpty(),
+                // Older imports only say it in the yield text ("8 servings").
+                servings = app.yeschef.data.cook.baseServings(detail.recipeServings, detail.recipeYield)?.let(::formatNumber).orEmpty(),
                 prep = DraftTime.of(detail.prepTime),
                 cook = DraftTime.of(detail.performTime),
                 total = DraftTime.of(detail.totalTime),
