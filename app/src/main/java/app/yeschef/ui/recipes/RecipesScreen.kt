@@ -29,14 +29,11 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -53,7 +50,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -68,11 +64,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yeschef.AppContainer
 import app.yeschef.data.local.RecipeEntity
-import app.yeschef.ui.HatLogo
 import app.yeschef.ui.RecipeImage
 import app.yeschef.ui.SyncAction
 import app.yeschef.ui.YcTopBar
-import app.yeschef.ui.isWide
 
 /** Recipe grid; on the tablet the selected recipe opens beside it. */
 @Composable
@@ -82,22 +76,8 @@ fun RecipesScreen(container: AppContainer, openSlug: String?, onOpen: (String?) 
     val list: @Composable (Modifier) -> Unit = { modifier ->
         RecipeGrid(recipes, config?.serverUrl, openSlug, onOpen, actions = { SyncAction(container) }, modifier = modifier)
     }
-    if (isWide()) {
-        Row(Modifier.fillMaxSize()) {
-            list(Modifier.width(400.dp).fillMaxHeight())
-            VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Box(Modifier.weight(1f).fillMaxHeight()) {
-                if (openSlug != null) {
-                    RecipeDetailScreen(container, openSlug, onBack = null)
-                } else {
-                    Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-                        HatLogo(120.dp)
-                        Text("Pick a recipe", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-        }
-    } else if (openSlug != null) {
+    // A recipe opens full screen with a back arrow, on the tablet as well as the phone.
+    if (openSlug != null) {
         BackHandler { onOpen(null) }
         RecipeDetailScreen(container, openSlug, onBack = { onOpen(null) })
     } else {
@@ -213,25 +193,14 @@ fun RecipeGrid(
                 }
             }
             sections.forEach { section ->
+                // The whole book: each chapter is a header followed by its recipes.
                 if (section.title.isNotEmpty()) {
-                    // The whole book: each chapter is a header and a shelf of cards to swipe through.
                     item(span = { GridItemSpan(maxLineSpan) }, key = "chapter-" + section.title) {
-                        Column {
-                            ChapterHeader(section.title, section.recipes.size) { chapter = section.title }
-                            LazyRow(
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                contentPadding = PaddingValues(top = 10.dp),
-                            ) {
-                                items(section.recipes, key = { it.id }) { recipe ->
-                                    RecipeCard(recipe, serverUrl, recipe.slug == selectedSlug, today, Modifier.width(176.dp)) { onOpen(recipe.slug) }
-                                }
-                            }
-                        }
+                        ChapterHeader(section.title, section.recipes.size) { chapter = section.title }
                     }
-                } else {
-                    items(section.recipes, key = { it.id }) { recipe ->
-                        RecipeCard(recipe, serverUrl, recipe.slug == selectedSlug, today) { onOpen(recipe.slug) }
-                    }
+                }
+                items(section.recipes, key = { it.id }) { recipe ->
+                    RecipeCard(recipe, serverUrl, recipe.slug == selectedSlug, today) { onOpen(recipe.slug) }
                 }
             }
         }
@@ -303,7 +272,9 @@ private fun SortButton(sort: Cookbook.Sort, chapterView: Boolean, onSort: (Cookb
         TextButton(onClick = { open = true }) {
             Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
-            Text(if (sort == Cookbook.Sort.Chapters && !chapterView) Cookbook.Sort.AtoZ.label else sort.label, maxLines = 1)
+            // The default order needs no label; any other sort says what it is.
+            val shown = if (sort == Cookbook.Sort.Chapters && !chapterView) Cookbook.Sort.AtoZ else sort
+            Text(if (shown == Cookbook.Sort.Chapters) "Sort" else shown.label, maxLines = 1)
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             Cookbook.Sort.entries
