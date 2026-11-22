@@ -41,6 +41,7 @@ import app.yeschef.ui.recipes.RecipeGrid
 import app.yeschef.ui.setup.SetupForm
 import app.yeschef.ui.shopping.ShoppingContent
 import app.yeschef.ui.theme.YesChefTheme
+import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Rule
 import org.junit.Test
 import java.time.LocalDate
@@ -87,6 +88,12 @@ class ScreenshotTest {
                 TimerTrayContent(Sample.timers, now = Sample.NOW)
             }
         }
+    }
+
+    /** Lasagna scaled from 8 to 12 servings, with the nutrition summary below the ingredients. */
+    @Test fun recipeScaled() {
+        paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_6.copy(screenHeight = 3600))
+        phone(tab = 1) { Detail(cookMode = false, servings = 12.0) }
     }
 
     @Test fun tabletCookMode() {
@@ -173,7 +180,7 @@ private fun Shopping() = ShoppingContent(
 )
 
 @Composable
-private fun Detail(cookMode: Boolean, withBack: Boolean = true) = RecipeDetailContent(
+private fun Detail(cookMode: Boolean, withBack: Boolean = true, servings: Double? = null) = RecipeDetailContent(
     title = Sample.lasagna.name,
     detail = Sample.lasagna,
     notLoadedMessage = "",
@@ -182,6 +189,7 @@ private fun Detail(cookMode: Boolean, withBack: Boolean = true) = RecipeDetailCo
     onToggleCookMode = {},
     onBack = if (withBack) ({}) else null,
     lastCooked = "Cooked 7 weeks ago",
+    initialServings = servings,
     onCustomTimer = {},
     onStartTimer = { _, _ -> },
     onTakePhoto = {},
@@ -234,9 +242,14 @@ private object Sample {
     val lasagna = RecipeDetailDto(
         id = "r3", slug = "lasagna", name = "Classic lasagna",
         description = "Layers of rich meat sauce, creamy ricotta and bubbling mozzarella. Worth every minute.",
-        recipeYield = "8 servings", prepTime = "30 min", performTime = "1 hr", totalTime = "1 hr 30 min",
+        recipeYield = "8 servings",
+        nutrition = mapOf(
+            "calories" to JsonPrimitive("520"), "proteinContent" to JsonPrimitive("31"),
+            "carbohydrateContent" to JsonPrimitive("38"), "fatContent" to JsonPrimitive("26"),
+            "fiberContent" to JsonPrimitive("4"), "sodiumContent" to JsonPrimitive("910"),
+        ), prepTime = "30 min", performTime = "1 hr", totalTime = "1 hr 30 min",
         recipeIngredient = listOf(
-            IngredientDto(display = "1 lb ground beef"),
+            IngredientDto(display = "1 1/2 lb ground beef"),
             IngredientDto(display = "1 yellow onion, diced"),
             IngredientDto(display = "24 oz marinara sauce"),
             IngredientDto(display = "16 oz ricotta"),

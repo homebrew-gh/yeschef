@@ -1,6 +1,13 @@
 package app.yeschef.ui.recipes
 
 import android.net.Uri
+import app.yeschef.data.cook.formatAmount
+import app.yeschef.data.cook.baseServings
+import app.yeschef.data.cook.scaleIngredient
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Add
 import java.time.LocalDate
 import app.yeschef.data.sync.SyncScheduler
 import app.yeschef.data.Cookbook
@@ -213,6 +220,7 @@ fun RecipeDetailContent(
     onToggleCookMode: () -> Unit,
     onBack: (() -> Unit)?,
     lastCooked: String? = null,
+    initialServings: Double? = null,
     onCustomTimer: () -> Unit,
     onStartTimer: (label: String, seconds: Long) -> Unit,
     photoUploading: Boolean = false,
@@ -223,6 +231,11 @@ fun RecipeDetailContent(
     val colors = MaterialTheme.colorScheme
     val wide = isWide()
     var checkedIngredients by remember(detail?.id) { mutableStateOf(setOf<Int>()) }
+    // Servings scaler: by servings when the recipe says how many it makes, else by a multiplier.
+    val servingsBase = remember(detail?.id) { detail?.let { baseServings(it.recipeServings, it.recipeYield) } }
+    var servings by remember(detail?.id) { mutableStateOf(initialServings ?: servingsBase ?: 1.0) }
+    var factor by remember(detail?.id) { mutableStateOf(1.0) }
+    val scale = servingsBase?.let { servings / it } ?: factor
     val bodyStyle = if (cookMode) MaterialTheme.typography.titleLarge.copy(fontFamily = MaterialTheme.typography.bodyLarge.fontFamily)
     else MaterialTheme.typography.bodyLarge
 
@@ -312,7 +325,12 @@ fun RecipeDetailContent(
                 }
             }
 
-            item { SectionLabel("Ingredients") }
+            item {
+                Row(Modifier.fillMaxWidth().padding(end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    SectionLabel("Ingredients", Modifier.weight(1f))
+                    ServingsStepper(servingsBase, servings, factor, onServings = { servings = it }, onFactor = { factor = it })
+                }
+            }
             item {
                 Surface(
                     shape = MaterialTheme.shapes.large,
@@ -325,12 +343,16 @@ fun RecipeDetailContent(
                                 Text(it, Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp), style = MaterialTheme.typography.titleSmall, color = colors.primary)
                             }
                             val done = index in checkedIngredients
-                            IngredientRow(ingredientText(ingredient), done, bodyStyle) {
+                            IngredientRow(scaleIngredient(ingredientText(ingredient), scale), done, bodyStyle) {
                                 checkedIngredients = if (done) checkedIngredients - index else checkedIngredients + index
                             }
                         }
                     }
                 }
+            }
+
+            nutritionRows(detail.nutrition).takeIf { it.isNotEmpty() }?.let { rows ->
+                item { NutritionCard(rows, Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp)) }
             }
 
             item { SectionLabel("Method") }
@@ -351,7 +373,7 @@ fun RecipeDetailContent(
                             Text(step.text, style = bodyStyle)
                             stepIngredients.getOrNull(index)?.takeIf { it.isNotEmpty() }?.let { used ->
                                 StepIngredients(
-                                    lines = used.map { i -> i to ingredientText(detail.recipeIngredient[i]) },
+                                    lines = used.map { i -> i to scaleIngredient(ingredientText(detail.recipeIngredient[i]), scale) },
                                     checked = checkedIngredients,
                                     onToggle = { i -> checkedIngredients = if (i in checkedIngredients) checkedIngredients - i else checkedIngredients + i },
                                 )
@@ -409,6 +431,105 @@ private fun PhotoButton(hasPhoto: Boolean, onTakePhoto: () -> Unit, onPickPhoto:
                 leadingIcon = { Icon(Icons.Filled.PhotoLibrary, contentDescription = null) },
                 onClick = { open = false; onPickPhoto() },
             )
+        }
+    }
+}
+
+/** "− Serves 6 +" when the recipe has a serving count, otherwise "− ×1½ +". */
+@Composable
+private fun ServingsStepper(
+    base: Double?,
+    servings: Double,
+    factor: Double,
+    onServings: (Double) -> Unit,
+    onFactor: (Double) -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val changed = if (base != null) servings != base else factor != 1.0
+    val label = if (base != null) {
+        val n = formatAmount(servings)
+        if (servings == 1.0) "Serves 1" else "Serves $n"
+    } else "×" + formatAmount(factor)
+    val steps = listOf(0.5, 1.0, 1.5, 2.0, 3.0, 4.0)
+    Surface(shape = CircleShape, color = if (changed) colors.tertiaryContainer else colors.surfaceContainer) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(
+                onClick = {
+                    if (base != null) onServings((servings - 1).coerceAtLeast(1.0))
+                    else onFactor(steps.lastOrNull { it < factor } ?: factor)
+                },
+                modifier = Modifier.size(36.dp),
+            ) { Icon(Icons.Filled.Remove, contentDescription = "Fewer servings", modifier = Modifier.size(18.dp)) }
+            Text(
+                label,
+                style = MaterialTheme.typography.labelLarge,
+                color = if (changed) colors.onTertiaryContainer else colors.onSurface,
+                modifier = Modifier.padding(horizontal = 2.dp),
+            )
+            IconButton(
+                onClick = {
+                    if (base != null) onServings(servings + 1)
+                    else onFactor(steps.firstOrNull { it > factor } ?: factor)
+                },
+                modifier = Modifier.size(36.dp),
+            ) { Icon(Icons.Filled.Add, contentDescription = "More servings", modifier = Modifier.size(18.dp)) }
+        }
+    }
+}
+
+private val NUTRIENTS = listOf(
+    "calories" to "Calories", "proteinContent" to "Protein", "carbohydrateContent" to "Carbs",
+    "fatContent" to "Fat", "saturatedFatContent" to "Saturated fat", "fiberContent" to "Fibre",
+    "sugarContent" to "Sugar", "sodiumContent" to "Sodium", "cholesterolContent" to "Cholesterol",
+)
+
+/** Mealie's nutrition values, labelled, with a unit added when the value is a bare number. */
+private fun nutritionRows(nutrition: Map<String, kotlinx.serialization.json.JsonElement?>?): List<Pair<String, String>> {
+    if (nutrition == null) return emptyList()
+    return NUTRIENTS.mapNotNull { (key, label) ->
+        val raw = (nutrition[key] as? kotlinx.serialization.json.JsonPrimitive)?.content?.trim()
+        if (raw.isNullOrEmpty() || raw == "null" || raw == "0") return@mapNotNull null
+        val unit = when (key) { "calories" -> " kcal"; "sodiumContent", "cholesterolContent" -> " mg"; else -> " g" }
+        label to (if (raw.toDoubleOrNull() != null) raw + unit else raw)
+    }
+}
+
+@Composable
+private fun NutritionCard(rows: List<Pair<String, String>>, modifier: Modifier = Modifier) {
+    val colors = MaterialTheme.colorScheme
+    var open by rememberSaveable { mutableStateOf(false) }
+    val headline = rows.firstOrNull { it.first == "Calories" }?.second
+    Surface(shape = MaterialTheme.shapes.large, color = colors.surfaceContainerLow, modifier = modifier.fillMaxWidth()) {
+        Column {
+            Row(
+                Modifier.fillMaxWidth().clickable { open = !open }.padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Nutrition", style = MaterialTheme.typography.titleSmall, color = colors.primary)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    listOfNotNull(headline, "per serving").joinToString(" · "),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colors.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, contentDescription = if (open) "Hide nutrition" else "Show nutrition", tint = colors.outline)
+            }
+            if (open) {
+                Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
+                    rows.chunked(2).forEach { pair ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                            pair.forEach { (label, value) ->
+                                Row(Modifier.weight(1f)) {
+                                    Text(label, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
+                                    Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(end = 16.dp))
+                                }
+                            }
+                            if (pair.size == 1) Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
         }
     }
 }
