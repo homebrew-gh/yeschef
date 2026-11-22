@@ -43,25 +43,52 @@ fun SidePickerContent(
     onCancel: () -> Unit,
     onCook: (List<String>) -> Unit,
     initialPicked: List<String> = emptyList(),
+) = RecipePickerContent(
+    recipes = recipes,
+    title = "Add a side",
+    subtitle = "Everything you pick goes on one timeline, so it's all ready together.",
+    priorityChapters = sideChapters,
+    actionLabel = { n -> if (n == 0) "Cook together" else "Cook together (${n + 1})" },
+    onCancel = onCancel,
+    onConfirm = onCook,
+    initialPicked = initialPicked,
+)
+
+/**
+ * A searchable list of recipes to tick, grouped with [priorityChapters] first. [extra]
+ * sits above the search box, for options such as which day to plan them on.
+ */
+@Composable
+fun RecipePickerContent(
+    recipes: List<RecipeEntity>,
+    title: String,
+    subtitle: String,
+    priorityChapters: List<String>,
+    actionLabel: (Int) -> String,
+    onCancel: () -> Unit,
+    onConfirm: (List<String>) -> Unit,
+    initialPicked: List<String> = emptyList(),
+    extra: @Composable () -> Unit = {},
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var picked by rememberSaveable { mutableStateOf(initialPicked) }
     val sections = remember(recipes, query) {
         val shown = Cookbook.filter(recipes, query, null, null).sortedBy { it.name.lowercase() }
         val byChapter = shown.groupBy(Cookbook::chapterOf)
-        val first = sideChapters.mapNotNull { c -> byChapter[c]?.let { c to it } }
-        val rest = shown.filter { Cookbook.chapterOf(it) !in sideChapters }
+        val first = priorityChapters.mapNotNull { c -> byChapter[c]?.let { c to it } }
+        val rest = shown.filter { Cookbook.chapterOf(it) !in priorityChapters }
         first + listOfNotNull(rest.takeIf { it.isNotEmpty() }?.let { (if (first.isEmpty()) "Recipes" else "Everything else") to it })
     }
 
     Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
-        Text("Add a side", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(horizontal = 20.dp))
+        Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(horizontal = 20.dp))
         Text(
-            "Everything you pick goes on one timeline, so it's all ready together.",
+            subtitle,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 8.dp),
         )
+        extra()
         OutlinedTextField(
             value = query,
             onValueChange = { query = it },
@@ -92,8 +119,8 @@ fun SidePickerContent(
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onCancel) { Text("Cancel") }
             Spacer(Modifier.weight(1f))
-            Button(onClick = { onCook(picked) }, enabled = picked.isNotEmpty()) {
-                Text(if (picked.isEmpty()) "Cook together" else "Cook together (${picked.size + 1})")
+            Button(onClick = { onConfirm(picked) }, enabled = picked.isNotEmpty()) {
+                Text(actionLabel(picked.size))
             }
             Spacer(Modifier.width(4.dp))
         }

@@ -35,7 +35,10 @@ import app.yeschef.data.remote.IngredientDto
 import app.yeschef.data.remote.RecipeDetailDto
 import app.yeschef.data.remote.StepDto
 import app.yeschef.ui.cook.TimerTrayContent
+import app.yeschef.ui.mealplan.AddToPlanContent
 import app.yeschef.ui.mealplan.MealPlanContent
+import app.yeschef.ui.mealplan.MoveMealContent
+import app.yeschef.ui.mealplan.SwapDayContent
 import app.yeschef.ui.recipes.RecipeDetailContent
 import app.yeschef.ui.recipes.RecipeGrid
 import app.yeschef.ui.setup.SetupForm
@@ -133,7 +136,37 @@ class ScreenshotTest {
             MealPlanContent(
                 Sample.mealPlan, Sample.today, null, {}, actions = { SyncIcon() },
                 sideSlugs = setOf("jasmine-rice", "roasted-broccoli", "yogurt-dill-sauce", "garlic-green-beans"),
+                onEditMeal = {}, onSwapDay = {}, onAddToDay = {},
             )
+        }
+    }
+
+    /** Long-press a meal: move the whole meal to another day or meal, or remove it. */
+    @Test fun moveMealSheet() = sheet {
+        MoveMealContent(
+            title = "Lemon-garlic chicken dinner", recipeCount = 4, date = Sample.today.plusDays(1), entryType = "dinner",
+            today = Sample.today, onMove = { _, _ -> }, onRemove = {}, onCancel = {},
+        )
+    }
+
+    @Test fun swapDaySheet() = sheet { SwapDayContent(Sample.today.plusDays(1), Sample.today, {}, {}) }
+
+    @Test fun addToPlanSheet() {
+        paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_6.copy(screenHeight = 2600))
+        sheet {
+            AddToPlanContent(Sample.recipes, Sample.today, Sample.today.plusDays(2), { _, _, _ -> }, {}, initialPicked = listOf("miso-glazed-salmon", "herb-rice-pilaf"))
+        }
+    }
+
+    private fun sheet(content: @Composable () -> Unit) = paparazzi.snapshot {
+        YesChefTheme {
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.3f))) {
+                Box(
+                    Modifier.align(androidx.compose.ui.Alignment.BottomCenter)
+                        .background(MaterialTheme.colorScheme.surfaceContainerLow, MaterialTheme.shapes.extraLarge)
+                        .padding(top = 24.dp, bottom = 8.dp),
+                ) { content() }
+            }
         }
     }
 

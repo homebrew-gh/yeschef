@@ -55,6 +55,7 @@ data class ShoppingItemEntity(
 
 @Entity(tableName = "meal_plan")
 data class MealPlanEntity(
+    /** Mealie's id; negative for an entry added offline that hasn't reached Mealie yet. */
     @PrimaryKey val id: Int,
     /** ISO date, yyyy-MM-dd. */
     val date: String,
@@ -84,5 +85,11 @@ data class PendingOpEntity(
         const val DELETE_ITEM = "delete_item"
         /** Set a recipe's categories and tags: itemId is the slug, listId holds {"c":[...],"t":[...]} names. */
         const val SET_ORGANIZERS = "set_organizers"
+        /** Move a meal plan entry: itemId is its id, listId holds {"d":date,"t":entryType}. */
+        const val MEAL_MOVE = "meal_move"
+        /** Delete a meal plan entry; the local row is already gone. */
+        const val MEAL_DELETE = "meal_delete"
+        /** Create a meal plan entry made offline: itemId is its local (negative) id. */
+        const val MEAL_ADD = "meal_add"
     }
 }
