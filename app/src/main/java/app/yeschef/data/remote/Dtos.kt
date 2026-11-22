@@ -53,6 +53,10 @@ data class RecipeSummaryDto(
 @Serializable
 data class LastMadeBody(val timestamp: String)
 
+/** A Mealie category or tag. */
+@Serializable
+data class OrganizerDto(val id: String, val name: String, val slug: String)
+
 @Serializable
 data class RecipeDetailDto(
     val id: String,

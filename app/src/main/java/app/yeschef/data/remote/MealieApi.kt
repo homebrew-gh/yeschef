@@ -42,6 +42,22 @@ interface MealieApi {
     @GET("recipes/{slug}")
     suspend fun recipe(@Path("slug") slug: String): RecipeDetailDto
 
+    @GET("organizers/categories")
+    suspend fun categories(@Query("perPage") perPage: Int = -1): Page<OrganizerDto>
+
+    @GET("organizers/tags")
+    suspend fun tags(@Query("perPage") perPage: Int = -1): Page<OrganizerDto>
+
+    @POST("organizers/categories")
+    suspend fun createCategory(@Body body: JsonObject): OrganizerDto
+
+    @POST("organizers/tags")
+    suspend fun createTag(@Body body: JsonObject): OrganizerDto
+
+    /** Partial recipe update; used to set its categories and tags. */
+    @PATCH("recipes/{slug}")
+    suspend fun patchRecipe(@Path("slug") slug: String, @Body body: JsonObject): ResponseBody
+
     /** Records that the recipe was cooked ("I made this" in Mealie). */
     @PATCH("recipes/{slug}/last-made")
     suspend fun setLastMade(@Path("slug") slug: String, @Body body: LastMadeBody): ResponseBody
