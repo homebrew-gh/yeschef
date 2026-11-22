@@ -67,6 +67,8 @@ data class RecipeDetailDto(
     val recipeServings: Double? = null,
     val orgURL: String? = null,
     val lastMade: String? = null,
+    /** Per-serving nutrition (calories, proteinContent, ...). Values may be text or numbers. */
+    val nutrition: Map<String, kotlinx.serialization.json.JsonElement?>? = null,
     val recipeIngredient: List<IngredientDto> = emptyList(),
     val recipeInstructions: List<StepDto> = emptyList(),
 )
