@@ -70,6 +70,29 @@ class ScreenshotTest {
 
     @Test fun recipeCookMode() = phone(tab = 1, dark = true) { Detail(cookMode = true) }
 
+    /** The whole cook-mode page, so the ingredients under each step and the timer labels show. */
+    @Test fun recipeCookModeFull() {
+        paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_6.copy(screenHeight = 5600))
+        phone(tab = 1) {
+            Column {
+                Box(Modifier.weight(1f)) { Detail(cookMode = true) }
+                TimerTrayContent(Sample.timers, now = Sample.NOW)
+            }
+        }
+    }
+
+    @Test fun tabletCookMode() {
+        paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_C.copy(screenHeight = 3200))
+        paparazzi.snapshot {
+            YesChefTheme {
+                Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                    Box(Modifier.weight(1f)) { Detail(cookMode = true, withBack = false) }
+                    TimerTrayContent(Sample.timers, now = Sample.NOW)
+                }
+            }
+        }
+    }
+
     @Test fun mealPlan() = phone(tab = 2) {
         MealPlanContent(Sample.mealPlan, Sample.today, null, {}, actions = { SyncIcon() })
     }
@@ -222,7 +245,8 @@ private object Sample {
     )
 
     val timers = listOf(
-        CookTimer(1, "Classic lasagna · step 4", 25 * 60_000L, endAt = NOW + 14 * 60_000L + 32_000L),
-        CookTimer(2, "Classic lasagna · step 2", 10 * 60_000L, done = true),
+        CookTimer(1, "Step 4 · Bake covered at 375°F", 25 * 60_000L, endAt = NOW + 14 * 60_000L + 32_000L, recipeName = "Classic lasagna"),
+        CookTimer(3, "Step 1 · Stir in the marinara and simmer", 15 * 60_000L, endAt = NOW + 6 * 60_000L + 5_000L, recipeName = "Classic lasagna"),
+        CookTimer(2, "Step 2 · Boil the noodles", 10 * 60_000L, done = true, recipeName = "Classic lasagna"),
     )
 }

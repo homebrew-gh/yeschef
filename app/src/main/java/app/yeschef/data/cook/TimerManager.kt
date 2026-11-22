@@ -49,11 +49,11 @@ class TimerManager(private val context: Context) {
     }
 
     @Synchronized
-    fun start(label: String, seconds: Long, recipeSlug: String? = null): CookTimer {
+    fun start(label: String, seconds: Long, recipeSlug: String? = null, recipeName: String? = null): CookTimer {
         val id = prefs.getInt(KEY_NEXT_ID, 1)
         prefs.edit().putInt(KEY_NEXT_ID, id + 1).apply()
         val ms = seconds * 1000
-        val timer = CookTimer(id, label, ms, endAt = System.currentTimeMillis() + ms, recipeSlug = recipeSlug)
+        val timer = CookTimer(id, label, ms, endAt = System.currentTimeMillis() + ms, recipeSlug = recipeSlug, recipeName = recipeName)
         update { it + timer }
         schedule(timer)
         showCountdown(timer)
@@ -168,6 +168,7 @@ class TimerManager(private val context: Context) {
         val builder = NotificationCompat.Builder(context, CHANNEL_RUNNING)
             .setSmallIcon(R.drawable.ic_timer)
             .setContentTitle(t.label)
+            .setSubText(t.subtitle)
             .setContentIntent(openAppIntent())
             .setOngoing(true)
             .setSilent(true)
@@ -189,7 +190,7 @@ class TimerManager(private val context: Context) {
         val n = NotificationCompat.Builder(context, CHANNEL_ALARM)
             .setSmallIcon(R.drawable.ic_timer)
             .setContentTitle("Time's up: ${t.label}")
-            .setContentText(formatShort(t.durationMs / 1000) + " timer finished")
+            .setContentText(listOfNotNull(t.subtitle, formatShort(t.durationMs / 1000) + " timer finished").joinToString(" · "))
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setContentIntent(openAppIntent())

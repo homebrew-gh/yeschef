@@ -66,17 +66,17 @@ import kotlinx.coroutines.delay
  * first time (Android 13+) so the alarm can ring when the app is in the background.
  */
 @Composable
-fun rememberTimerStarter(timers: TimerManager): (label: String, seconds: Long, slug: String?) -> Unit {
+fun rememberTimerStarter(timers: TimerManager): (label: String, seconds: Long, slug: String?, recipeName: String?) -> Unit {
     val context = LocalContext.current
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     return remember(timers) {
-        { label: String, seconds: Long, slug: String? ->
+        { label: String, seconds: Long, slug: String?, recipeName: String? ->
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                 ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
             ) {
                 launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
-            timers.start(label, seconds, slug)
+            timers.start(label, seconds, slug, recipeName)
         }
     }
 }
@@ -172,7 +172,10 @@ private fun TimerRow(
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(t.label, style = MaterialTheme.typography.labelLarge, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(t.label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = if (t.done) colors.onTertiaryContainer else colors.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                t.subtitle?.let {
+                    Text(it, style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
                 Text(
                     when {
                         t.done -> "Time's up!"

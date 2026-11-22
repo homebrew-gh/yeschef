@@ -68,6 +68,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
@@ -76,6 +77,10 @@ import app.yeschef.AppContainer
 import app.yeschef.data.cook.DetectedDuration
 import app.yeschef.data.cook.detectDurations
 import app.yeschef.data.cook.formatShort
+import app.yeschef.data.cook.IngredientLine
+import app.yeschef.data.cook.StepLine
+import app.yeschef.data.cook.ingredientsForSteps
+import app.yeschef.data.cook.timerStepLabel
 import app.yeschef.data.remote.IngredientDto
 import app.yeschef.data.remote.RecipeDetailDto
 import app.yeschef.ui.RecipeImage
@@ -109,7 +114,7 @@ fun RecipeDetailScreen(container: AppContainer, slug: String, onBack: (() -> Uni
             defaultLabel = recipeName,
             onDismiss = { showCustomTimer = false },
             onStart = { label, seconds ->
-                startTimer(label, seconds, slug)
+                startTimer(label, seconds, slug, recipeName)
                 showCustomTimer = false
             },
         )
@@ -149,7 +154,7 @@ fun RecipeDetailScreen(container: AppContainer, slug: String, onBack: (() -> Uni
         onToggleCookMode = { cookMode = !cookMode },
         onBack = onBack,
         onCustomTimer = { showCustomTimer = true },
-        onStartTimer = { stepNumber, seconds -> startTimer("$recipeName · step $stepNumber", seconds, slug) },
+        onStartTimer = { label, seconds -> startTimer(label, seconds, slug, recipeName) },
         photoUploading = uploading,
         onTakePhoto = {
             val uri = newCameraUri(context)
@@ -178,7 +183,7 @@ fun RecipeDetailContent(
     onToggleCookMode: () -> Unit,
     onBack: (() -> Unit)?,
     onCustomTimer: () -> Unit,
-    onStartTimer: (stepNumber: Int, seconds: Long) -> Unit,
+    onStartTimer: (label: String, seconds: Long) -> Unit,
     photoUploading: Boolean = false,
     onTakePhoto: (() -> Unit)? = null,
     onPickPhoto: (() -> Unit)? = null,
@@ -223,6 +228,7 @@ fun RecipeDetailContent(
             Text(notLoadedMessage, Modifier.padding(padding).padding(24.dp), style = MaterialTheme.typography.bodyLarge)
             return@Scaffold
         }
+        val stepIngredients = remember(detail, cookMode) { if (cookMode) stepIngredientsFor(detail) else emptyList() }
         LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = 32.dp)) {
             if (!cookMode) {
                 item {
@@ -311,13 +317,24 @@ fun RecipeDetailContent(
                         Spacer(Modifier.width(14.dp))
                         Column(Modifier.weight(1f).padding(top = 4.dp)) {
                             Text(step.text, style = bodyStyle)
+                            stepIngredients.getOrNull(index)?.takeIf { it.isNotEmpty() }?.let { used ->
+                                StepIngredients(
+                                    lines = used.map { i -> i to ingredientText(detail.recipeIngredient[i]) },
+                                    checked = checkedIngredients,
+                                    onToggle = { i -> checkedIngredients = if (i in checkedIngredients) checkedIngredients - i else checkedIngredients + i },
+                                )
+                            }
                             val found = remember(step.text, step.durationSeconds) { stepTimers(step.text, step.durationSeconds) }
                             if (found.isNotEmpty()) {
                                 Row(
                                     Modifier.horizontalScroll(rememberScrollState()).padding(top = 8.dp),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
-                                    found.forEach { d -> TimerChip(formatShort(d.seconds)) { onStartTimer(index + 1, d.seconds) } }
+                                    found.forEach { d ->
+                                        TimerChip(formatShort(d.seconds)) {
+                                            onStartTimer(timerStepLabel(index + 1, step.summary?.takeIf { it.isNotBlank() } ?: step.title, step.text, d.text), d.seconds)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -363,6 +380,58 @@ private fun PhotoButton(hasPhoto: Boolean, onTakePhoto: () -> Unit, onPickPhoto:
         }
     }
 }
+
+/** In cook mode, the ingredients a step uses, shown right under it with their amounts. */
+@Composable
+private fun StepIngredients(lines: List<Pair<Int, String>>, checked: Set<Int>, onToggle: (Int) -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = colors.tertiaryContainer.copy(alpha = 0.55f),
+        modifier = Modifier.padding(top = 10.dp).fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(vertical = 4.dp)) {
+            Text(
+                "YOU'LL NEED",
+                Modifier.padding(start = 14.dp, top = 8.dp, bottom = 2.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.tertiary,
+            )
+            lines.forEach { (index, text) ->
+                val done = index in checked
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 40.dp).clickable { onToggle(index) }.padding(horizontal = 14.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        Modifier.size(18.dp).clip(RoundedCornerShape(6.dp))
+                            .background(if (done) colors.tertiary else colors.surface)
+                            .then(if (done) Modifier else Modifier.border(1.5.dp, colors.tertiary.copy(alpha = 0.6f), RoundedCornerShape(6.dp))),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (done) Icon(Icons.Filled.Check, contentDescription = null, tint = colors.onTertiary, modifier = Modifier.size(13.dp))
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        textDecoration = if (done) TextDecoration.LineThrough else null,
+                        color = if (done) colors.outline else colors.onSurface,
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun stepIngredientsFor(detail: RecipeDetailDto): List<List<Int>> = ingredientsForSteps(
+    detail.recipeIngredient.map { i ->
+        val text = ingredientText(i)
+        IngredientLine(i.referenceId, i.food?.name, text, isHeadingOnly = text.isBlank() && i.food == null)
+    },
+    detail.recipeInstructions.map { st -> StepLine(st.text, st.ingredientReferences.mapNotNull { it.referenceId }) },
+)
 
 @Composable
 private fun FactPill(label: String, value: String) {
