@@ -94,3 +94,9 @@ dependencies {
 
     testImplementation(libs.junit)
 }
+
+// Debug and release KSP both write Room's schema JSON to the same folder.
+// Running them at the same time can leave an empty file and fail the build.
+tasks.matching { it.name == "kspReleaseKotlin" }.configureEach {
+    mustRunAfter("kspDebugKotlin")
+}
