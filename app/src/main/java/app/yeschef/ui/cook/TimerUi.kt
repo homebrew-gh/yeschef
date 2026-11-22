@@ -102,6 +102,8 @@ fun TimerChip(text: String, onClick: () -> Unit) {
 @Composable
 fun TimerTray(timers: TimerManager, modifier: Modifier = Modifier) {
     val list by timers.timers.collectAsStateWithLifecycle()
+    // A running or ringing timer also keeps the screen awake, on any screen.
+    KeepScreenOn(list.any { it.running || it.done })
     if (list.isEmpty()) return
     val now by produceState(System.currentTimeMillis(), list) {
         while (true) {

@@ -38,7 +38,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,7 +47,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
@@ -65,6 +63,7 @@ import app.yeschef.ui.YcTopBar
 import app.yeschef.ui.isWide
 import app.yeschef.ui.cook.CustomTimerDialog
 import app.yeschef.ui.cook.TimerChip
+import app.yeschef.ui.cook.KeepScreenOn
 import app.yeschef.ui.cook.rememberTimerStarter
 
 @Composable
@@ -77,11 +76,7 @@ fun RecipeDetailScreen(container: AppContainer, slug: String, onBack: (() -> Uni
 
     // Cook mode keeps the screen awake while this recipe is open.
     var cookMode by rememberSaveable { mutableStateOf(false) }
-    val view = LocalView.current
-    DisposableEffect(cookMode) {
-        view.keepScreenOn = cookMode
-        onDispose { view.keepScreenOn = false }
-    }
+    KeepScreenOn(cookMode)
     val recipeName = detail?.name ?: entity?.name ?: "Timer"
     val startTimer = rememberTimerStarter(container.timers)
     var showCustomTimer by rememberSaveable { mutableStateOf(false) }
