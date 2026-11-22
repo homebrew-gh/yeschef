@@ -29,3 +29,15 @@ fun groupMeals(entries: List<MealPlanEntity>): List<MealGroup> =
             MealGroup(date, type, group.sortedBy { if (it.entryType.equals("side", true) && type != "side") 1 else 0 })
         }.sortedBy { g -> mealOrder.indexOf(g.entryType).let { if (it < 0) 99 else it } }
     }
+
+/**
+ * Splits a meal into its main dish(es) and the sides that go with it. A side is an entry
+ * planned with Mealie's "side" type or a recipe in the Sides chapter ([isSide], by slug).
+ * If everything looks like a side, the first one is treated as the main.
+ */
+fun MealGroup.mainsAndSides(isSide: (String) -> Boolean): Pair<List<MealPlanEntity>, List<MealPlanEntity>> {
+    val (sides, mains) = entries.partition { e ->
+        (e.entryType.equals("side", true) && !entryType.equals("side", true)) || (e.recipeSlug?.let(isSide) ?: false)
+    }
+    return if (mains.isEmpty()) entries.take(1) to entries.drop(1) else mains to sides
+}

@@ -74,26 +74,31 @@ fun buildMealTimeline(recipes: List<MealRecipeIn>): MealTimeline {
 
 /** Total time from Mealie: "total" if set, else prep + cook; null when none parse. */
 fun recipeSeconds(recipe: MealRecipeIn): Long? {
-    parseRecipeTime(recipe.totalTime)?.let { return it }
+    parseRecipeTime(recipe.totalTime)?.takeIf { it > 0 }?.let { return it }
+    // A no-cook recipe stores cook time "0 minutes": it is just its prep.
     val prep = parseRecipeTime(recipe.prepTime)
     val cook = parseRecipeTime(recipe.performTime)
-    return if (prep == null && cook == null) null else (prep ?: 0L) + (cook ?: 0L)
+    if (prep == null && cook == null) return null
+    return ((prep ?: 0L) + (cook ?: 0L)).takeIf { it > 0 }
 }
 
+private val zero = Regex("""(?i)^0+(?:\.0+)?\s*(?:h|hrs?|hours?|m|mins?|minutes?|s|secs?|seconds?)?$""")
 private val iso = Regex("""(?i)^P(?:T)?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$""")
 
 /**
  * Mealie stores times as text: "1 hour 30 minutes", "45 min", "PT1H30M", or a bare "40"
- * (minutes). Returns seconds, or null when it is blank or unreadable.
+ * (minutes). Returns seconds; 0 for an explicit zero such as "0 minutes" (no cooking);
+ * null when it is blank or unreadable (unknown).
  */
 fun parseRecipeTime(raw: String?): Long? {
     val s = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
     iso.matchEntire(s)?.let { m ->
         val (h, min, sec) = m.destructured
         val total = (h.toLongOrNull() ?: 0) * 3600 + (min.toLongOrNull() ?: 0) * 60 + (sec.toLongOrNull() ?: 0)
-        return total.takeIf { it > 0 }
+        return total
     }
-    s.toDoubleOrNull()?.let { return (it * 60).toLong().takeIf { v -> v > 0 } }
+    s.toDoubleOrNull()?.let { return (it * 60).toLong().coerceAtLeast(0) }
+    if (zero.matches(s)) return 0L
     // "1:30" as hours and minutes.
     Regex("""^(\d+):(\d{2})$""").matchEntire(s)?.let { m ->
         return (m.groupValues[1].toLong() * 3600 + m.groupValues[2].toLong() * 60).takeIf { it > 0 }

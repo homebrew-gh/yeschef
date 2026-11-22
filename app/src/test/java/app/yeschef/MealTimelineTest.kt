@@ -6,6 +6,7 @@ import app.yeschef.data.cook.buildMealTimeline
 import app.yeschef.data.cook.parseRecipeTime
 import app.yeschef.data.cook.planReminders
 import app.yeschef.data.groupMeals
+import app.yeschef.data.mainsAndSides
 import app.yeschef.data.local.MealPlanEntity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -22,6 +23,16 @@ class MealTimelineTest {
         assertEquals(4500L, parseRecipeTime("1:15"))
         assertNull(parseRecipeTime(""))
         assertNull(parseRecipeTime("a while"))
+        assertEquals(0L, parseRecipeTime("0 minutes"))
+        assertEquals(0L, parseRecipeTime("PT0M"))
+    }
+
+    @Test fun noCookRecipeIsJustItsPrep() {
+        val sauce = MealRecipeIn("Yogurt-dill sauce", "5 minutes", "0 minutes", null, steps("Mix everything.", "Chill."))
+        val t = buildMealTimeline(listOf(sauce))
+        assertTrue(t.recipes[0].timesKnown)
+        assertEquals(300L, t.recipes[0].totalSeconds)
+        assertEquals(300L, t.steps[0].startsBefore)
     }
 
     private fun steps(vararg text: String) = text.map { MealStepIn(it) }
@@ -98,5 +109,23 @@ class MealTimelineTest {
         assertTrue(dinner.cookable)
         assertFalse(groups[0].cookable)
         assertEquals("2026-11-24", groups[2].date)
+    }
+
+    @Test fun splitsMainFromSides() {
+        val dinner = groupMeals(
+            listOf(
+                e(1, "2026-11-23", "dinner", "jasmine-rice"),
+                e(2, "2026-11-23", "dinner", "lemon-chicken"),
+                e(3, "2026-11-23", "dinner", "broccoli"),
+            ),
+        ).single()
+        val sides = setOf("jasmine-rice", "broccoli")
+        val (mains, withs) = dinner.mainsAndSides { it in sides }
+        assertEquals(listOf("lemon-chicken"), mains.map { it.recipeSlug })
+        assertEquals(listOf("jasmine-rice", "broccoli"), withs.map { it.recipeSlug })
+        // Nothing filed as a main: the first entry leads.
+        val (m2, s2) = dinner.mainsAndSides { true }
+        assertEquals(listOf("jasmine-rice"), m2.map { it.recipeSlug })
+        assertEquals(2, s2.size)
     }
 }
