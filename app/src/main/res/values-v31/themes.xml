@@ -1,0 +1,8 @@
+<resources>
+    <!-- Launch splash: the hat on white (or night blue in dark mode). -->
+    <style name="Theme.YesChef" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/yc_white</item>
+        <item name="android:windowSplashScreenBackground">@color/yc_white</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+    </style>
+</resources>

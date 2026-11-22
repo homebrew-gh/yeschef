@@ -22,3 +22,37 @@ jobs:
         with:
           name: yeschef-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+
+  # Renders the screenshot tests and commits the images to the PR branch,
+  # so design changes can be reviewed right on the pull request.
+  screenshots:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Record screenshots
+        run: ./gradlew --no-daemon recordPaparazziDebug
+      - name: Commit screenshots
+        run: |
+          git add app/src/test/snapshots
+          if git diff --cached --quiet; then
+            echo "Screenshots unchanged"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "Update screenshots"
+            git push
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yeschef-screenshots
+          path: app/src/test/snapshots/images/*.png

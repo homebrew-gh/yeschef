@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [
@@ -13,7 +15,7 @@ import androidx.room.RoomDatabase
         MealPlanEntity::class,
         PendingOpEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class YesChefDb : RoomDatabase() {
@@ -24,8 +26,17 @@ abstract class YesChefDb : RoomDatabase() {
     companion object {
         fun build(context: Context): YesChefDb =
             Room.databaseBuilder(context, YesChefDb::class.java, "yeschef.db")
-                // Everything here is a cache of the server except unsent edits; fine for v1.
+                .addMigrations(MIGRATION_1_2)
+                // Everything here is a cache of the server except unsent edits.
                 .fallbackToDestructiveMigration()
                 .build()
+    }
+}
+
+/** v2: recipe tags on shopping items. Keeps queued edits. */
+val MIGRATION_1_2 = object : Migration(1, 2) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE shopping_lists ADD COLUMN recipeNamesJson TEXT NOT NULL DEFAULT '{}'")
+        db.execSQL("ALTER TABLE shopping_items ADD COLUMN recipeIds TEXT NOT NULL DEFAULT ''")
     }
 }

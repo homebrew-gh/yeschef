@@ -2,6 +2,8 @@ package app.yeschef
 
 import app.yeschef.data.ShoppingRow
 import app.yeschef.data.UNLABELED
+import app.yeschef.data.assignRecipeColors
+import app.yeschef.data.parseRecipeIds
 import app.yeschef.data.groupForShopping
 import app.yeschef.data.itemText
 import app.yeschef.data.withChecked
@@ -51,5 +53,19 @@ class ShoppingLogicTest {
         assertTrue(updated["checked"]!!.jsonPrimitive.boolean)
         assertEquals(raw["recipeReferences"], updated["recipeReferences"])
         assertFalse(raw["checked"]!!.jsonPrimitive.boolean)
+    }
+
+    @Test
+    fun recipeColorsAreDistinctAndStable() {
+        val names = mapOf("r2" to "Tacos", "r1" to "Lasagna", "r3" to "Banana bread")
+        val colors = assignRecipeColors(names, paletteSize = 8)
+        assertEquals(mapOf("r3" to 0, "r1" to 1, "r2" to 2), colors)
+        assertEquals(colors, assignRecipeColors(names.toList().reversed().toMap(), 8))
+    }
+
+    @Test
+    fun parsesRecipeIdList() {
+        assertEquals(listOf("a", "b"), parseRecipeIds("a, b,"))
+        assertEquals(emptyList<String>(), parseRecipeIds(""))
     }
 }

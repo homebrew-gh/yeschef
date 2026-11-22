@@ -167,10 +167,12 @@ class Repository(
         for (summary in summaries) {
             val list = api.shoppingList(summary.id)
             val order = list.labelSettings.associate { it.labelId to it.position }
+            val recipeNames = list.recipeReferences.mapNotNull { ref -> ref.recipe?.name?.let { ref.recipeId to it } }.toMap()
             lists += ShoppingListEntity(
                 id = list.id,
                 name = list.name ?: "Shopping list",
                 labelOrderJson = MealieJson.encodeToString(order),
+                recipeNamesJson = MealieJson.encodeToString(recipeNames),
             )
             items[list.id] = list.listItems.mapNotNull { it.toEntity(list.id) }
         }
@@ -212,6 +214,7 @@ class Repository(
             labelColor = label?.color,
             rawJson = this.toString(),
             pending = false,
+            recipeIds = dto.recipeReferences.mapNotNull { it.recipeId }.distinct().joinToString(","),
         )
     }
 }

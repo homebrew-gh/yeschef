@@ -22,6 +22,8 @@ data class ShoppingListEntity(
     val name: String,
     /** JSON object of labelId -> position, from the list's label settings. */
     val labelOrderJson: String,
+    /** JSON object of recipeId -> recipe name, for recipes added to this list. */
+    val recipeNamesJson: String = "{}",
 )
 
 @Entity(tableName = "shopping_items", indices = [Index("listId")])
@@ -39,6 +41,8 @@ data class ShoppingItemEntity(
     val rawJson: String?,
     /** True while a local change has not reached the server yet. */
     val pending: Boolean,
+    /** Comma-separated ids of the recipes this item came from. */
+    val recipeIds: String = "",
 )
 
 @Entity(tableName = "meal_plan")
