@@ -105,7 +105,7 @@ fun SetupForm(
     val colors = MaterialTheme.colorScheme
     Box(
         Modifier.fillMaxSize().background(
-            Brush.verticalGradient(listOf(colors.background, colors.primaryContainer.copy(alpha = 0.6f), colors.background)),
+            Brush.verticalGradient(listOf(colors.surfaceContainer, colors.primaryContainer, colors.background)),
         ),
     ) {
         Column(

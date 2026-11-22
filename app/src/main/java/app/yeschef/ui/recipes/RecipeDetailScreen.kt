@@ -1,6 +1,7 @@
 package app.yeschef.ui.recipes
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -60,6 +62,7 @@ import app.yeschef.data.remote.RecipeDetailDto
 import app.yeschef.ui.RecipeImage
 import app.yeschef.ui.SectionLabel
 import app.yeschef.ui.YcTopBar
+import app.yeschef.ui.isWide
 import app.yeschef.ui.cook.CustomTimerDialog
 import app.yeschef.ui.cook.TimerChip
 import app.yeschef.ui.cook.rememberTimerStarter
@@ -120,6 +123,7 @@ fun RecipeDetailContent(
     onStartTimer: (stepNumber: Int, seconds: Long) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    val wide = isWide()
     var checkedIngredients by remember(detail?.id) { mutableStateOf(setOf<Int>()) }
     val bodyStyle = if (cookMode) MaterialTheme.typography.titleLarge.copy(fontFamily = MaterialTheme.typography.bodyLarge.fontFamily)
     else MaterialTheme.typography.bodyLarge
@@ -161,7 +165,9 @@ fun RecipeDetailContent(
                 item {
                     RecipeImage(
                         serverUrl, detail.id,
-                        Modifier.padding(horizontal = 16.dp).fillMaxWidth().aspectRatio(16f / 10f).clip(MaterialTheme.shapes.extraLarge),
+                        Modifier.padding(horizontal = 16.dp).fillMaxWidth()
+                            .then(if (wide) Modifier.height(300.dp) else Modifier.aspectRatio(16f / 10f))
+                            .clip(MaterialTheme.shapes.extraLarge),
                     )
                 }
                 item {
@@ -271,7 +277,7 @@ private fun IngredientRow(text: String, done: Boolean, style: androidx.compose.u
         Box(
             Modifier.size(22.dp).clip(RoundedCornerShape(7.dp))
                 .background(if (done) colors.primary else colors.surface)
-                .then(if (done) Modifier else Modifier.background(colors.outlineVariant.copy(alpha = 0.5f))),
+                .then(if (done) Modifier else Modifier.border(1.5.dp, colors.outline, RoundedCornerShape(7.dp))),
             contentAlignment = Alignment.Center,
         ) {
             if (done) Icon(Icons.Filled.Check, contentDescription = null, tint = colors.onPrimary, modifier = Modifier.size(16.dp))
