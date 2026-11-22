@@ -23,6 +23,16 @@ class MealTimelineTest {
         assertEquals(4500L, parseRecipeTime("1:15"))
         assertNull(parseRecipeTime(""))
         assertNull(parseRecipeTime("a while"))
+        assertEquals(0L, parseRecipeTime("0 minutes"))
+        assertEquals(0L, parseRecipeTime("PT0M"))
+    }
+
+    @Test fun noCookRecipeIsJustItsPrep() {
+        val sauce = MealRecipeIn("Yogurt-dill sauce", "5 minutes", "0 minutes", null, steps("Mix everything.", "Chill."))
+        val t = buildMealTimeline(listOf(sauce))
+        assertTrue(t.recipes[0].timesKnown)
+        assertEquals(300L, t.recipes[0].totalSeconds)
+        assertEquals(300L, t.steps[0].startsBefore)
     }
 
     private fun steps(vararg text: String) = text.map { MealStepIn(it) }
