@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -65,6 +66,8 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.RemoveShoppingCart
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.ui.text.font.FontWeight
@@ -84,6 +87,7 @@ import app.yeschef.data.ShoppingSection
 import app.yeschef.data.SyncState
 import app.yeschef.data.assignRecipeColors
 import app.yeschef.data.groupForShopping
+import app.yeschef.data.mergeLabelOrders
 import app.yeschef.data.parseRecipeIds
 import app.yeschef.data.remote.MealieJson
 import app.yeschef.data.sync.SyncScheduler
@@ -91,17 +95,31 @@ import app.yeschef.ui.SyncAction
 import app.yeschef.ui.YcTopBar
 import app.yeschef.ui.theme.OverlineStyle
 import app.yeschef.ui.theme.RecipeTagColors
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+
+/** Stands in for a list id when the Shopping Day view is open. */
+private const val SHOPPING_DAY = "shopping-day"
 
 @Composable
 fun ShoppingScreen(container: AppContainer) {
     val repo = container.repository
+    val settings = container.settings
     val lists by remember { repo.shoppingLists() }.collectAsStateWithLifecycle(emptyList())
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(lists) {
-        if (lists.isNotEmpty() && lists.none { it.id == selectedId }) selectedId = lists.first().id
+        if (selectedId != SHOPPING_DAY && lists.isNotEmpty() && lists.none { it.id == selectedId }) selectedId = lists.first().id
     }
+    val inDay = selectedId == SHOPPING_DAY
     val selected = lists.firstOrNull { it.id == selectedId }
+    val dayIds by remember { settings.shoppingDayLists }.collectAsStateWithLifecycle(emptyList())
+    val savedAddTo by remember { settings.shoppingDayAddTo }.collectAsStateWithLifecycle(null)
+    val dayLists = lists.filter { it.id in dayIds }
+    val addToId = savedAddTo?.takeIf { id -> dayLists.any { it.id == id } } ?: dayLists.firstOrNull()?.id
+    // The lists on screen: the picked one, or every Shopping Day list merged.
+    val shown = if (inDay) dayLists else listOfNotNull(selected)
     val syncState by repo.syncState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -118,24 +136,52 @@ fun ShoppingScreen(container: AppContainer) {
             }
         }
     }
-
-    val items by remember(selected?.id) { selected?.let { repo.shoppingItems(it.id) } ?: kotlinx.coroutines.flow.flowOf(emptyList()) }
-        .collectAsStateWithLifecycle(emptyList())
-    val labelOrder = remember(selected?.labelOrderJson) {
-        selected?.labelOrderJson?.let { runCatching { MealieJson.decodeFromString<Map<String, Int>>(it) }.getOrNull() }.orEmpty()
+    fun queued(block: suspend () -> Unit) {
+        scope.launch {
+            block()
+            SyncScheduler.requestSync(context)
+        }
     }
-    val recipeNames = remember(selected?.recipeNamesJson) {
-        selected?.recipeNamesJson?.let { runCatching { MealieJson.decodeFromString<Map<String, String>>(it) }.getOrNull() }.orEmpty()
+
+    val rows by remember(shown, inDay) {
+        if (shown.isEmpty()) {
+            flowOf(emptyList<ShoppingRow>())
+        } else {
+            combine(
+                shown.map { list ->
+                    repo.shoppingItems(list.id).map { items ->
+                        items.map {
+                            ShoppingRow(
+                                it.id, it.text, it.checked, it.position, it.labelId, it.labelName, it.labelColor, it.pending,
+                                parseRecipeIds(it.recipeIds),
+                                listId = if (inDay) list.id else null,
+                                listName = if (inDay) list.name else null,
+                            )
+                        }
+                    }
+                },
+            ) { parts -> parts.flatMap { it } }
+        }
+    }.collectAsStateWithLifecycle(emptyList())
+    val labelOrder = remember(shown) {
+        mergeLabelOrders(
+            shown.map { list ->
+                list.labelOrderJson?.let { runCatching { MealieJson.decodeFromString<Map<String, Int>>(it) }.getOrNull() }.orEmpty()
+            },
+        )
+    }
+    val recipeNames = remember(shown) {
+        shown.flatMap { list ->
+            list.recipeNamesJson?.let { runCatching { MealieJson.decodeFromString<Map<String, String>>(it) }.getOrNull() }.orEmpty().entries
+        }.associate { it.key to it.value }
     }
 
     ShoppingContent(
-        title = selected?.name ?: "Shopping",
+        title = if (inDay) "Shopping Day" else selected?.name ?: "Shopping",
         lists = lists.map { it.id to it.name },
         onPickList = { selectedId = it },
-        hasList = selected != null,
-        rows = items.map {
-            ShoppingRow(it.id, it.text, it.checked, it.position, it.labelId, it.labelName, it.labelColor, it.pending, parseRecipeIds(it.recipeIds))
-        },
+        hasList = if (inDay) lists.isNotEmpty() else selected != null,
+        rows = rows,
         labelOrder = labelOrder,
         recipeNames = recipeNames,
         emptyMessage = when (val s = syncState) {
@@ -146,37 +192,14 @@ fun ShoppingScreen(container: AppContainer) {
         },
         refreshing = syncState == SyncState.Syncing,
         onRefresh = { scope.launch { repo.sync() } },
-        onToggle = { row ->
-            scope.launch {
-                repo.setChecked(row.id, !row.checked)
-                SyncScheduler.requestSync(context)
-            }
-        },
+        onToggle = { row -> queued { repo.setChecked(row.id, !row.checked) } },
         onAdd = { text ->
-            selected?.let { list ->
-                scope.launch {
-                    repo.addItem(list.id, text)
-                    SyncScheduler.requestSync(context)
-                }
-            }
+            val target = if (inDay) addToId else selected?.id
+            target?.let { queued { repo.addItem(it, text) } }
         },
         actions = { SyncAction(container) },
-        onClearChecked = {
-            selected?.let { list ->
-                scope.launch {
-                    repo.clearChecked(list.id)
-                    SyncScheduler.requestSync(context)
-                }
-            }
-        },
-        onUncheckAll = {
-            selected?.let { list ->
-                scope.launch {
-                    repo.uncheckAll(list.id)
-                    SyncScheduler.requestSync(context)
-                }
-            }
-        },
+        onClearChecked = { queued { shown.forEach { repo.clearChecked(it.id) } } },
+        onUncheckAll = { queued { shown.forEach { repo.uncheckAll(it.id) } } },
         onNewList = { name -> listAction("Couldn't create the list") { repo.createList(name) } },
         onRenameList = { name -> selected?.let { list -> listAction("Couldn't rename the list") { repo.renameList(list.id, name) } } },
         onDeleteList = {
@@ -188,6 +211,11 @@ fun ShoppingScreen(container: AppContainer) {
             }
         },
         snackbarHostState = snackbar,
+        shoppingDay = if (inDay) dayLists.map { it.id to it.name } else null,
+        onOpenShoppingDay = { selectedId = SHOPPING_DAY },
+        onChooseDayLists = { ids -> scope.launch { settings.saveShoppingDayLists(ids) } },
+        addToId = addToId,
+        onPickAddTo = { id -> scope.launch { settings.saveShoppingDayAddTo(id) } },
     )
 }
 
@@ -215,17 +243,35 @@ fun ShoppingContent(
     onDeleteList: () -> Unit = {},
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     initialShowChecked: Boolean = false,
+    /** The picked lists (id to name) when the Shopping Day view is open; null on a single list. */
+    shoppingDay: List<Pair<String, String>>? = null,
+    onOpenShoppingDay: () -> Unit = {},
+    onChooseDayLists: (List<String>) -> Unit = {},
+    /** The Shopping Day list that the add bar adds to. */
+    addToId: String? = null,
+    onPickAddTo: (String) -> Unit = {},
 ) {
+    val inDay = shoppingDay != null
     var recipeFilter by rememberSaveable { mutableStateOf<String?>(null) }
+    var listFilter by rememberSaveable(shoppingDay) { mutableStateOf<String?>(null) }
     val colorSlots = remember(recipeNames) { assignRecipeColors(recipeNames, RecipeTagColors.size) }
     val recipeColor: (String) -> Color? = { id -> colorSlots[id]?.let { RecipeTagColors[it] } }
-    val visible = remember(rows, recipeFilter) {
-        if (recipeFilter == null) rows else rows.filter { recipeFilter in it.recipeIds }
+    val visible = remember(rows, recipeFilter, listFilter) {
+        rows.filter { (recipeFilter == null || recipeFilter in it.recipeIds) && (listFilter == null || it.listId == listFilter) }
     }
     val (sections, checked) = remember(visible, labelOrder) { groupForShopping(visible, labelOrder) }
     var showChecked by rememberSaveable { mutableStateOf(initialShowChecked) }
-    var dialog by rememberSaveable { mutableStateOf<String?>(null) } // "new", "rename", "delete", "clear"
+    var dialog by rememberSaveable { mutableStateOf<String?>(null) } // "new", "rename", "delete", "clear", "day"
+    // First time on Shopping Day: ask which lists to shop from.
+    LaunchedEffect(inDay, shoppingDay?.isEmpty()) {
+        if (shoppingDay != null && shoppingDay.isEmpty() && lists.isNotEmpty()) dialog = "day"
+    }
     when (dialog) {
+        "day" -> DayListsDialog(
+            lists = lists,
+            initial = shoppingDay.orEmpty().map { it.first }.ifEmpty { lists.map { it.first } },
+            onDismiss = { dialog = null },
+        ) { ids -> onChooseDayLists(ids); dialog = null }
         "new" -> NameDialog("New list", "", "Create", onDismiss = { dialog = null }) { onNewList(it); dialog = null }
         "rename" -> NameDialog("Rename list", title, "Rename", onDismiss = { dialog = null }) { onRenameList(it); dialog = null }
         "delete" -> ConfirmDialog(
@@ -236,7 +282,7 @@ fun ShoppingContent(
         ) { onDeleteList(); dialog = null }
         "clear" -> ConfirmDialog(
             "Clear the cart?",
-            "Removes the ${checked.size} ticked item${if (checked.size == 1) "" else "s"} from this list.",
+            "Removes the ${checked.size} ticked item${if (checked.size == 1) "" else "s"} from ${if (inDay) "their lists" else "this list"}.",
             "Clear",
             onDismiss = { dialog = null },
         ) { onClearChecked(); dialog = null }
@@ -246,7 +292,8 @@ fun ShoppingContent(
         topBar = {
             YcTopBar(title = "", actions = { actions() }, navigationIcon = {
                 ListPicker(
-                    lists, title, hasList, onPickList,
+                    lists, title, hasList && !inDay, inDay, onPickList,
+                    onShoppingDay = onOpenShoppingDay, onChooseDayLists = { dialog = "day" },
                     onNew = { dialog = "new" }, onRename = { dialog = "rename" }, onDelete = { dialog = "delete" },
                 )
             })
@@ -259,9 +306,30 @@ fun ShoppingContent(
                 Text(emptyMessage, Modifier.padding(24.dp), style = MaterialTheme.typography.bodyLarge)
                 return@PullToRefreshBox
             }
+            if (shoppingDay != null && shoppingDay.isEmpty()) {
+                Column(Modifier.padding(24.dp)) {
+                    Text(
+                        "Shopping Day puts the lists you pick on one screen, sorted by store section. Pick your lists to start.",
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    FilledTonalButton(onClick = { dialog = "day" }) { Text("Choose lists") }
+                }
+                return@PullToRefreshBox
+            }
             Column(Modifier.fillMaxSize()) {
                 LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp)) {
-                    item(key = "progress") { ProgressCard(done = rows.count { it.checked }, total = rows.size) }
+                    item(key = "progress") {
+                        ProgressCard(done = rows.count { it.checked }, total = rows.size, onShoppingDay = if (inDay || lists.size < 2) null else onOpenShoppingDay)
+                    }
+                    if (shoppingDay != null) {
+                        item(key = "lists") {
+                            DayListRow(shoppingDay, listFilter, onEdit = { dialog = "day" }) { id ->
+                                listFilter = id
+                                if (id != null) onPickAddTo(id)
+                            }
+                        }
+                    }
                     if (recipeNames.isNotEmpty()) {
                         item(key = "recipes") {
                             RecipeFilterRow(recipeNames, colorSlots, recipeFilter) { recipeFilter = it }
@@ -270,7 +338,7 @@ fun ShoppingContent(
                     if (sections.isEmpty()) {
                         item(key = "done") {
                             Text(
-                                if (rows.isEmpty()) "This list is empty. Add something below." else "All done! Everything's in the cart.",
+                                if (rows.isEmpty()) "${if (inDay) "These lists are" else "This list is"} empty. Add something below." else "All done! Everything's in the cart.",
                                 Modifier.padding(24.dp),
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -324,7 +392,7 @@ fun ShoppingContent(
                         }
                     }
                 }
-                AddItemBar(onAdd)
+                AddItemBar(onAdd, targets = shoppingDay.orEmpty(), targetId = addToId, onPickTarget = onPickAddTo)
             }
         }
     }
@@ -335,7 +403,10 @@ private fun ListPicker(
     lists: List<Pair<String, String>>,
     title: String,
     hasList: Boolean,
+    inDay: Boolean,
     onPick: (String) -> Unit,
+    onShoppingDay: () -> Unit,
+    onChooseDayLists: () -> Unit,
     onNew: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
@@ -350,9 +421,17 @@ private fun ListPicker(
             Icon(Icons.Filled.ArrowDropDown, contentDescription = "Lists")
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            if (lists.isNotEmpty()) {
+                DropdownMenuItem(
+                    text = { Text("Shopping Day", fontWeight = if (inDay) FontWeight.SemiBold else null) },
+                    leadingIcon = { Icon(Icons.Filled.Storefront, contentDescription = null) },
+                    onClick = { onShoppingDay(); open = false },
+                )
+                HorizontalDivider()
+            }
             lists.forEach { (id, name) ->
                 DropdownMenuItem(
-                    text = { Text(name, fontWeight = if (name == title) FontWeight.SemiBold else null) },
+                    text = { Text(name, fontWeight = if (!inDay && name == title) FontWeight.SemiBold else null) },
                     leadingIcon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = null) },
                     onClick = { onPick(id); open = false },
                 )
@@ -363,6 +442,13 @@ private fun ListPicker(
                 leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null) },
                 onClick = { open = false; onNew() },
             )
+            if (inDay) {
+                DropdownMenuItem(
+                    text = { Text("Choose Shopping Day lists") },
+                    leadingIcon = { Icon(Icons.Filled.Checklist, contentDescription = null) },
+                    onClick = { open = false; onChooseDayLists() },
+                )
+            }
             if (hasList) {
                 DropdownMenuItem(
                     text = { Text("Rename \"$title\"") },
@@ -397,6 +483,79 @@ private fun NameDialog(heading: String, initial: String, confirm: String, onDism
     )
 }
 
+/** Picks the lists that Shopping Day merges. */
+@Composable
+private fun DayListsDialog(
+    lists: List<Pair<String, String>>,
+    initial: List<String>,
+    onDismiss: () -> Unit,
+    onConfirm: (List<String>) -> Unit,
+) {
+    var picked by rememberSaveable { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Shopping Day") },
+        text = {
+            Column {
+                Text(
+                    "Shop from these lists together. Ticking an item off still updates its own list.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                lists.forEach { (id, name) ->
+                    val on = id in picked
+                    Row(
+                        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small)
+                            .clickable { picked = if (on) picked - id else picked + id },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(checked = on, onCheckedChange = { picked = if (on) picked - id else picked + id })
+                        Text(name, style = MaterialTheme.typography.bodyLarge)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = picked.isNotEmpty(), onClick = { onConfirm(lists.map { it.first }.filter { it in picked }) }) {
+                Text("Start shopping")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/** Shopping Day's lists as chips: tap one to see only that list (and add to it), or edit the set. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DayListRow(
+    lists: List<Pair<String, String>>,
+    selected: String?,
+    onEdit: () -> Unit,
+    onSelect: (String?) -> Unit,
+) {
+    Row(
+        Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FilterChip(selected = selected == null, onClick = { onSelect(null) }, label = { Text("All lists") })
+        lists.forEach { (id, name) ->
+            FilterChip(
+                selected = selected == id,
+                onClick = { onSelect(if (selected == id) null else id) },
+                label = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                leadingIcon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = null, modifier = Modifier.size(16.dp)) },
+            )
+        }
+        TextButton(onClick = onEdit) {
+            Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(4.dp))
+            Text("Lists")
+        }
+    }
+}
+
 @Composable
 private fun ConfirmDialog(heading: String, body: String, confirm: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
     AlertDialog(
@@ -409,7 +568,7 @@ private fun ConfirmDialog(heading: String, body: String, confirm: String, onDism
 }
 
 @Composable
-private fun ProgressCard(done: Int, total: Int) {
+private fun ProgressCard(done: Int, total: Int, onShoppingDay: (() -> Unit)? = null) {
     val colors = MaterialTheme.colorScheme
     Surface(
         shape = MaterialTheme.shapes.large,
@@ -420,7 +579,19 @@ private fun ProgressCard(done: Int, total: Int) {
             Row(verticalAlignment = Alignment.Bottom) {
                 Text("$done", style = MaterialTheme.typography.headlineLarge, color = colors.onPrimaryContainer)
                 Text(" of $total in the cart", style = MaterialTheme.typography.bodyLarge, color = colors.onPrimaryContainer,
-                    modifier = Modifier.padding(bottom = 6.dp))
+                    modifier = Modifier.padding(bottom = 6.dp).weight(1f))
+                // Opens every list you shop from together, merged by store section.
+                if (onShoppingDay != null) {
+                    FilledTonalButton(
+                        onClick = onShoppingDay,
+                        contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+                        colors = ButtonDefaults.filledTonalButtonColors(containerColor = colors.surface, contentColor = colors.primary),
+                    ) {
+                        Icon(Icons.Filled.Storefront, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Shopping Day")
+                    }
+                }
             }
             Spacer(Modifier.height(12.dp))
             LinearProgressIndicator(
@@ -529,14 +700,32 @@ private fun ItemRow(
                 }
             }
         }
+        row.listName?.let { name ->
+            Surface(
+                shape = CircleShape,
+                color = colors.secondaryContainer,
+                modifier = Modifier.padding(start = 8.dp, end = if (row.pending) 0.dp else 16.dp).widthIn(max = 120.dp),
+            ) {
+                Text(
+                    name, style = MaterialTheme.typography.labelSmall, color = colors.onSecondaryContainer,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                )
+            }
+        }
         if (row.pending) {
-            Icon(Icons.Filled.CloudUpload, "Waiting to sync", Modifier.padding(end = 16.dp).size(18.dp), tint = colors.outline)
+            Icon(Icons.Filled.CloudUpload, "Waiting to sync", Modifier.padding(start = 8.dp, end = 16.dp).size(18.dp), tint = colors.outline)
         }
     }
 }
 
 @Composable
-private fun AddItemBar(onAdd: (String) -> Unit) {
+private fun AddItemBar(
+    onAdd: (String) -> Unit,
+    targets: List<Pair<String, String>> = emptyList(),
+    targetId: String? = null,
+    onPickTarget: (String) -> Unit = {},
+) {
     var text by rememberSaveable { mutableStateOf("") }
     val submit = {
         if (text.isNotBlank()) onAdd(text)
@@ -547,6 +736,28 @@ private fun AddItemBar(onAdd: (String) -> Unit) {
             Modifier.fillMaxWidth().imePadding().padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // On Shopping Day, pick which list a new item goes on (toilet paper to Household, say).
+            if (targets.isNotEmpty()) {
+                var open by remember { mutableStateOf(false) }
+                Box {
+                    TextButton(onClick = { open = true }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp)) {
+                        Text(
+                            targets.firstOrNull { it.first == targetId }?.second ?: targets.first().second,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 96.dp),
+                        )
+                        Icon(Icons.Filled.ArrowDropDown, contentDescription = "Add to which list")
+                    }
+                    DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                        targets.forEach { (id, name) ->
+                            DropdownMenuItem(
+                                text = { Text("Add to $name", fontWeight = if (id == targetId) FontWeight.SemiBold else null) },
+                                onClick = { onPickTarget(id); open = false },
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.width(4.dp))
+            }
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it },

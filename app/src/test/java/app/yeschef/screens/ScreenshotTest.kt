@@ -84,6 +84,9 @@ class ScreenshotTest {
         }
     }
 
+    /** Shopping Day: Weekly groceries and Household merged, each item tagged with its list. */
+    @Test fun shoppingDay() = phone(tab = 0) { ShoppingDay() }
+
     @Test fun recipes() = phone(tab = 1) { RecipeGrid(Sample.recipes, null, null, {}, actions = { SyncIcon() }, today = Sample.today) }
 
     @Test fun recipesSides() = phone(tab = 1) {
@@ -268,6 +271,25 @@ private fun Shopping(showChecked: Boolean = false) = ShoppingContent(
 )
 
 @Composable
+private fun ShoppingDay() = ShoppingContent(
+    title = "Shopping Day",
+    lists = listOf("1" to "Weekly groceries", "2" to "Costco", "3" to "Household"),
+    onPickList = {},
+    hasList = true,
+    rows = Sample.shoppingDay,
+    labelOrder = mapOf("produce" to 0, "dairy" to 1, "bakery" to 2, "meat" to 3, "pantry" to 4),
+    recipeNames = Sample.listRecipes,
+    emptyMessage = "",
+    refreshing = false,
+    onRefresh = {},
+    onToggle = {},
+    onAdd = {},
+    actions = { SyncIcon() },
+    shoppingDay = listOf("1" to "Weekly groceries", "3" to "Household"),
+    addToId = "3",
+)
+
+@Composable
 private fun Detail(cookMode: Boolean, withBack: Boolean = true, servings: Double? = null) = RecipeDetailContent(
     title = Sample.lasagna.name,
     detail = Sample.lasagna,
@@ -375,6 +397,13 @@ private object Sample {
         row("10", "1.5 lb chicken thighs", "Meat", false, "r-tacos"),
         row("11", "Lasagna noodles", "Pantry", false, "r-lasagna"),
         row("12", "Coffee beans", null),
+    )
+
+    /** Weekly groceries plus a small Household list, as the Shopping Day view merges them. */
+    val shoppingDay = shopping.filter { it.id != "4b" }.map { it.copy(listId = "1", listName = "Weekly groceries") } + listOf(
+        row("h1", "Toilet paper", null).copy(listId = "3", listName = "Household"),
+        row("h2", "Dishwasher pods", null).copy(listId = "3", listName = "Household"),
+        row("h3", "Paper towels", null, true).copy(listId = "3", listName = "Household"),
     )
 
     private fun recipe(id: String, name: String, time: String?, cats: String, tags: String, lastMade: String? = null, rating: Double? = null) =

@@ -6,6 +6,7 @@ import app.yeschef.data.assignRecipeColors
 import app.yeschef.data.parseRecipeIds
 import app.yeschef.data.groupForShopping
 import app.yeschef.data.itemText
+import app.yeschef.data.mergeLabelOrders
 import app.yeschef.data.withChecked
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.boolean
@@ -67,5 +68,26 @@ class ShoppingLogicTest {
     fun parsesRecipeIdList() {
         assertEquals(listOf("a", "b"), parseRecipeIds("a, b,"))
         assertEquals(emptyList<String>(), parseRecipeIds(""))
+    }
+
+    @Test
+    fun mergedLabelOrderKeepsFirstListOrderThenAddsTheRest() {
+        val weekly = mapOf("produce" to 0, "dairy" to 1, "meat" to 2)
+        val household = mapOf("cleaning" to 0, "produce" to 1, "paper" to 2)
+        val merged = mergeLabelOrders(listOf(weekly, household))
+        assertEquals(listOf("produce", "dairy", "meat", "cleaning", "paper"), merged.entries.sortedBy { it.value }.map { it.key })
+        assertEquals(mapOf("a" to 3), mergeLabelOrders(listOf(emptyMap(), mapOf("a" to 3))))
+    }
+
+    @Test
+    fun mergedListsGroupBySharedStoreSection() {
+        val rows = listOf(
+            row("onions", "Produce").copy(listId = "weekly"),
+            row("tp", null).copy(listId = "household"),
+            row("apples", "Produce").copy(listId = "household"),
+        )
+        val (sections, _) = groupForShopping(rows, mergeLabelOrders(listOf(mapOf("id-Produce" to 0))))
+        assertEquals(listOf("Produce", UNLABELED), sections.map { it.labelName })
+        assertEquals(setOf("weekly", "household"), sections.first().rows.map { it.listId }.toSet())
     }
 }

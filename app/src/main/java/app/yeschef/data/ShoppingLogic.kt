@@ -15,6 +15,9 @@ data class ShoppingRow(
     val pending: Boolean,
     /** Recipes this item came from; empty for items added by hand. */
     val recipeIds: List<String> = emptyList(),
+    /** Set on the Shopping Day view only: the list this item lives on. */
+    val listId: String? = null,
+    val listName: String? = null,
 )
 
 data class ShoppingSection(
@@ -90,3 +93,18 @@ fun assignRecipeColors(recipeNames: Map<String, String>, paletteSize: Int): Map<
         .toMap()
 
 fun parseRecipeIds(csv: String): List<String> = csv.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+
+/**
+ * Store-section order for several lists shown together (Shopping Day). The first list's
+ * order wins; labels only later lists have go after it, in those lists' own order.
+ */
+fun mergeLabelOrders(orders: List<Map<String, Int>>): Map<String, Int> {
+    val merged = LinkedHashMap<String, Int>()
+    for (order in orders) {
+        val base = (merged.values.maxOrNull() ?: -1) + 1
+        for ((label, pos) in order.entries.sortedBy { it.value }) {
+            if (label !in merged) merged[label] = base + pos
+        }
+    }
+    return merged
+}
