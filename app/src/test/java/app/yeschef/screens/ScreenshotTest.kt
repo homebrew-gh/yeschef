@@ -127,8 +127,14 @@ class ScreenshotTest {
         }
     }
 
-    @Test fun mealPlan() = phone(tab = 2) {
-        MealPlanContent(Sample.mealPlan, Sample.today, null, {}, actions = { SyncIcon() })
+    @Test fun mealPlan() {
+        paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_6.copy(screenHeight = 3000))
+        phone(tab = 2) {
+            MealPlanContent(
+                Sample.mealPlan, Sample.today, null, {}, actions = { SyncIcon() },
+                sideSlugs = setOf("jasmine-rice", "roasted-broccoli", "yogurt-dill-sauce", "garlic-green-beans"),
+            )
+        }
     }
 
     @Test fun tagEditor() {
@@ -415,7 +421,10 @@ private object Sample {
         MealPlanEntity(1, "2026-11-23", "breakfast", null, null, "r1", "banana-bread", "Banana bread"),
         MealPlanEntity(2, "2026-11-23", "dinner", null, null, "r3", "lasagna", "Classic lasagna"),
         MealPlanEntity(6, "2026-11-23", "side", null, null, "r7", "garlic-green-beans", "Garlic green beans"),
-        MealPlanEntity(3, "2026-11-24", "dinner", null, null, "r2", "chicken-tacos", "Chicken tacos with lime crema"),
+        MealPlanEntity(7, "2026-11-24", "dinner", null, null, "r12", "jasmine-rice", "Jasmine rice"),
+        MealPlanEntity(3, "2026-11-24", "dinner", null, null, "r11", "lemon-garlic-chicken", "Lemon-garlic chicken"),
+        MealPlanEntity(8, "2026-11-24", "dinner", null, null, "r13", "roasted-broccoli", "Roasted broccoli, bell peppers & red onion"),
+        MealPlanEntity(9, "2026-11-24", "dinner", null, null, "r14", "yogurt-dill-sauce", "Yogurt-dill sauce"),
         MealPlanEntity(4, "2026-11-25", "lunch", "Leftover lasagna", "Pack for work", null, null, null),
         MealPlanEntity(5, "2026-11-25", "dinner", null, null, "r4", "miso-salmon", "Miso glazed salmon"),
     )
