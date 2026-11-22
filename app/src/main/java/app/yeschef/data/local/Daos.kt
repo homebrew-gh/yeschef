@@ -151,4 +151,16 @@ abstract class MealPlanDao {
         clear()
         insert(entries)
     }
+
+    @Query("SELECT * FROM meal_plan WHERE id = :id")
+    abstract suspend fun entry(id: Int): MealPlanEntity?
+
+    @Query("SELECT * FROM meal_plan WHERE date = :date")
+    abstract suspend fun onDate(date: String): List<MealPlanEntity>
+
+    @Query("UPDATE meal_plan SET date = :date, entryType = :entryType WHERE id = :id")
+    abstract suspend fun move(id: Int, date: String, entryType: String)
+
+    @Query("DELETE FROM meal_plan WHERE id = :id")
+    abstract suspend fun delete(id: Int)
 }

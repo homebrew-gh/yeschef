@@ -136,4 +136,16 @@ interface MealieApi {
         @Query("orderBy") orderBy: String = "date",
         @Query("orderDirection") orderDirection: String = "asc",
     ): Page<MealPlanEntryDto>
+
+    @GET("households/mealplans/{id}")
+    suspend fun mealPlanRaw(@Path("id") id: Int): JsonObject
+
+    @PUT("households/mealplans/{id}")
+    suspend fun updateMealPlan(@Path("id") id: Int, @Body body: JsonObject): ResponseBody
+
+    @POST("households/mealplans")
+    suspend fun createMealPlan(@Body body: JsonObject): ResponseBody
+
+    @DELETE("households/mealplans/{id}")
+    suspend fun deleteMealPlan(@Path("id") id: Int): ResponseBody
 }

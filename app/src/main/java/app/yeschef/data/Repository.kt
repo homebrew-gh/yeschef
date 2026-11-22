@@ -304,6 +304,77 @@ class Repository(
         db.shopping().enqueue(PendingOpEntity(kind = PendingOpEntity.LAST_MADE, itemId = slug, listId = now))
     }
 
+    // ---- Meal plan edits (queued) ----
+    // Shown at once and sent with the next sync, like shopping edits. Entries added
+    // offline have a negative id until Mealie has them; edits to those just change the
+    // local row, which the queued add sends as it is at sync time.
+
+    /** Moves the given entries (a meal: main and sides) to another day and meal. */
+    suspend fun moveMeal(entries: List<MealPlanEntity>, date: LocalDate, entryType: String) {
+        val dao = db.mealPlan()
+        for (e in entries) {
+            dao.move(e.id, date.toString(), entryType)
+            if (e.id >= 0) {
+                db.shopping().enqueue(
+                    PendingOpEntity(
+                        kind = PendingOpEntity.MEAL_MOVE, itemId = e.id.toString(),
+                        listId = MealieJson.encodeToString(MealMove(date.toString(), entryType)),
+                    ),
+                )
+            }
+        }
+    }
+
+    suspend fun removeMeal(entries: List<MealPlanEntity>) {
+        for (e in entries) {
+            db.mealPlan().delete(e.id)
+            if (e.id < 0) db.shopping().deleteOpsFor(e.id.toString())
+            else db.shopping().enqueue(PendingOpEntity(kind = PendingOpEntity.MEAL_DELETE, itemId = e.id.toString(), listId = ""))
+        }
+    }
+
+    /** Swaps everything planned on two days, keeping each entry's meal. */
+    suspend fun swapDays(a: LocalDate, b: LocalDate) {
+        if (a == b) return
+        val onA = db.mealPlan().onDate(a.toString())
+        val onB = db.mealPlan().onDate(b.toString())
+        for (e in onA) moveMeal(listOf(e), b, e.entryType)
+        for (e in onB) moveMeal(listOf(e), a, e.entryType)
+    }
+
+    /** Plans recipes on a day, e.g. a main and its sides as dinner. */
+    suspend fun addToPlan(date: LocalDate, entryType: String, recipes: List<RecipeEntity>) {
+        for (r in recipes) {
+            val id = -(1 + (UUID.randomUUID().mostSignificantBits ushr 33).toInt())
+            db.mealPlan().insert(listOf(MealPlanEntity(id, date.toString(), entryType, null, null, r.id, r.slug, r.name)))
+            db.shopping().enqueue(PendingOpEntity(kind = PendingOpEntity.MEAL_ADD, itemId = id.toString(), listId = ""))
+        }
+    }
+
+    private suspend fun pushMealOp(api: MealieApi, op: PendingOpEntity) {
+        val id = op.itemId.toIntOrNull() ?: return
+        when (op.kind) {
+            PendingOpEntity.MEAL_DELETE -> api.deleteMealPlan(id)
+            PendingOpEntity.MEAL_MOVE -> {
+                val move = MealieJson.decodeFromString<MealMove>(op.listId)
+                val raw = api.mealPlanRaw(id)
+                api.updateMealPlan(id, JsonObject(raw + mapOf("date" to JsonPrimitive(move.d), "entryType" to JsonPrimitive(move.t))))
+            }
+            PendingOpEntity.MEAL_ADD -> {
+                val e = db.mealPlan().entry(id) ?: return
+                val body = buildMap<String, kotlinx.serialization.json.JsonElement> {
+                    put("date", JsonPrimitive(e.date))
+                    put("entryType", JsonPrimitive(e.entryType))
+                    put("title", JsonPrimitive(e.title.orEmpty()))
+                    put("text", JsonPrimitive(e.text.orEmpty()))
+                    e.recipeId?.let { put("recipeId", JsonPrimitive(it)) }
+                }
+                api.createMealPlan(JsonObject(body))
+                db.mealPlan().delete(id) // the server copy arrives with the pull
+            }
+        }
+    }
+
     // ---- Sync ----
 
     suspend fun sync(): SyncState = syncMutex.withLock {
@@ -365,6 +436,7 @@ class Repository(
                     op.kind == PendingOpEntity.SET_ORGANIZERS -> pushOrganizers(api, op.itemId, op.listId)
                     op.kind == PendingOpEntity.SAVE_RECIPE -> pushRecipe(api, op.listId)
                     op.kind == PendingOpEntity.ADD_RECIPE_TO_LIST -> pushListAddition(api, op.itemId, op.listId)
+                    op.kind in MEAL_OPS -> pushMealOp(api, op)
                     item == null -> Unit
                     op.kind == PendingOpEntity.CREATE -> {
                         api.createShoppingItem(
@@ -482,6 +554,11 @@ private data class ListAddition(
     val indexes: List<Int>,
     val local: List<String>,
 )
+private val MEAL_OPS = setOf(PendingOpEntity.MEAL_MOVE, PendingOpEntity.MEAL_DELETE, PendingOpEntity.MEAL_ADD)
+
+/** A queued meal plan move: date and meal. */
+@kotlinx.serialization.Serializable
+private data class MealMove(val d: String, val t: String)
 
 /** A queued category/tag change, by name. Short keys keep the queue row small. */
 @kotlinx.serialization.Serializable
