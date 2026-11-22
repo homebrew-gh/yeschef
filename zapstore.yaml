@@ -1,0 +1,36 @@
+# Zapstore listing for YesChef. Read by zsp (https://github.com/zapstore/zsp).
+# See zapstore/PUBLISHING.md for how releases get published.
+repository: https://github.com/homebrew-gh/yeschef
+release_source: https://github.com/homebrew-gh/yeschef
+# Only the signed builds that CI publishes from main (tags build-N).
+release_filter: '^build-[0-9]+$'
+match: '^yeschef-.*\.apk$'
+
+name: YesChef
+summary: An offline-first Android app for your Mealie recipes, meal plan and shopping lists.
+description: |
+  YesChef is a native Android app for [Mealie](https://mealie.io), the self-hosted recipe
+  manager. It works on phones and tablets and keeps working when you have no signal; edits sync
+  back to your own Mealie server when it's reachable, for example over WireGuard.
+
+  - Shopping lists sorted by aisle and colour-coded by recipe, multiple lists, Clear cart
+  - Cookbook with chapters from Mealie categories and filters from tags
+  - Cook mode with each step's ingredients and labelled timers that ring even when the app is closed
+  - Servings scaler, nutrition, recipe photos, meal plan
+  - Light, dark or system theme
+
+  You need your own Mealie server. On Start9, the mealie-startos package
+  (https://github.com/homebrew-gh/mealie-startos) sets it up. No accounts, ads or tracking.
+license: MIT
+website: https://github.com/homebrew-gh/yeschef
+tags: [food, recipes, cooking, shopping, mealie, self-hosted]
+
+icon: ./zapstore/icon.png
+images:
+  - app/src/test/snapshots/images/app.yeschef.screens_ScreenshotTest_shopping.png
+  - app/src/test/snapshots/images/app.yeschef.screens_ScreenshotTest_recipes.png
+  - app/src/test/snapshots/images/app.yeschef.screens_ScreenshotTest_recipeDetail.png
+  - app/src/test/snapshots/images/app.yeschef.screens_ScreenshotTest_recipeCookMode.png
+  - app/src/test/snapshots/images/app.yeschef.screens_ScreenshotTest_mealPlan.png
+  - app/src/test/snapshots/images/app.yeschef.screens_ScreenshotTest_shoppingDark.png
+  - app/src/test/snapshots/images/app.yeschef.screens_ScreenshotTest_tabletRecipes.png

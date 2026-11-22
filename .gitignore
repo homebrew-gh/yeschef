@@ -10,3 +10,6 @@ build/
 .kotlin/
 *.keystore
 *.jks
+
+# zsp signing settings (never commit)
+.env
