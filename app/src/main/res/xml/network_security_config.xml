@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Mealie on StartOS is served over HTTPS with a certificate signed by your
+  server's own StartOS Root CA. Android ignores user-installed CAs by default,
+  so we opt in here. Install the Root CA on the device once:
+  Settings > Security & privacy > More security settings > Encryption & credentials
+  > Install a certificate > CA certificate.
+
+  Cleartext HTTP is allowed too, because traffic to the server already travels
+  inside the WireGuard tunnel. Prefer the HTTPS address when you have it.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

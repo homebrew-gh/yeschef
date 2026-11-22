@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Placeholder launcher icon: an orange circle with a white chef-hat-ish shape. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#E8590C" android:pathData="M54,54m-54,0a54,54 0,1 1,108 0a54,54 0,1 1,-108 0" />
+    <path android:fillColor="#FFFFFF" android:pathData="M36,62h36v10H36z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M54,30c-6,0 -10,4 -11,8c-5,-1 -11,3 -11,9c0,6 5,10 10,10h24c5,0 10,-4 10,-10c0,-6 -6,-10 -11,-9c-1,-4 -5,-8 -11,-8z" />
+</vector>
