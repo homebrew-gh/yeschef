@@ -17,7 +17,12 @@ data class CookTimer(
     val pausedRemainingMs: Long = 0,
     val done: Boolean = false,
     val recipeSlug: String? = null,
+    /** The recipe this timer belongs to, shown under the step label. */
+    val recipeName: String? = null,
 ) {
+    /** The recipe name, when it adds something the label doesn't already say. */
+    val subtitle: String? get() = recipeName?.takeIf { it.isNotBlank() && it != label }
+
     val running: Boolean get() = endAt != null && !done
     fun remainingMs(now: Long): Long = when {
         done -> 0

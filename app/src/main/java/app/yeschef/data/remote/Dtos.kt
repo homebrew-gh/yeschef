@@ -71,6 +71,8 @@ data class IngredientDto(
     val originalText: String? = null,
     val food: NamedDto? = null,
     val unit: NamedDto? = null,
+    /** Mealie's id for this line, which steps point at through ingredientReferences. */
+    val referenceId: String? = null,
 )
 
 @Serializable
@@ -84,7 +86,12 @@ data class StepDto(
     val text: String = "",
     /** Optional step time set in Mealie. */
     val durationSeconds: Int? = null,
+    /** Ingredients linked to this step in Mealie's recipe editor. */
+    val ingredientReferences: List<IngredientReferenceDto> = emptyList(),
 )
+
+@Serializable
+data class IngredientReferenceDto(val referenceId: String? = null)
 
 @Serializable
 data class LabelDto(val id: String, val name: String, val color: String? = null)
