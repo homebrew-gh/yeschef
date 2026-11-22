@@ -28,6 +28,9 @@ abstract class RecipeDao {
     @Query("UPDATE recipes SET detailJson = :json WHERE slug = :slug")
     abstract suspend fun setDetail(slug: String, json: String)
 
+    @Query("UPDATE recipes SET lastMade = :iso WHERE slug = :slug")
+    abstract suspend fun setLastMade(slug: String, iso: String)
+
     @Query("DELETE FROM recipes WHERE id NOT IN (:keep)")
     abstract suspend fun deleteAllExcept(keep: List<String>)
 

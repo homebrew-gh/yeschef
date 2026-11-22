@@ -1,6 +1,11 @@
 package app.yeschef.ui.recipes
 
 import android.net.Uri
+import java.time.LocalDate
+import app.yeschef.data.sync.SyncScheduler
+import app.yeschef.data.Cookbook
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -145,13 +150,38 @@ fun RecipeDetailScreen(container: AppContainer, slug: String, onBack: (() -> Uni
         if (uri != null) upload(uri)
     }
 
+    // Leaving cook mode asks whether to log the recipe as cooked (Mealie's "last made").
+    var askCooked by rememberSaveable { mutableStateOf(false) }
+    if (askCooked) {
+        AlertDialog(
+            onDismissRequest = { askCooked = false },
+            title = { Text("Mark as cooked?") },
+            text = { Text("Save today as the last time you made $recipeName.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    askCooked = false
+                    scope.launch {
+                        repo.markCooked(slug)
+                        SyncScheduler.requestSync(context)
+                        snackbar.showSnackbar("Marked as cooked today")
+                    }
+                }) { Text("Yes, I made it") }
+            },
+            dismissButton = { TextButton(onClick = { askCooked = false }) { Text("Not now") } },
+        )
+    }
+
     RecipeDetailContent(
         title = recipeName,
         detail = detail,
         notLoadedMessage = if (entity == null) "Recipe not found." else "This recipe hasn't been downloaded yet. Connect the VPN to load it.",
         serverUrl = config?.serverUrl,
         cookMode = cookMode,
-        onToggleCookMode = { cookMode = !cookMode },
+        onToggleCookMode = {
+            if (cookMode && detail != null) askCooked = true
+            cookMode = !cookMode
+        },
+        lastCooked = Cookbook.lastCookedText(entity?.lastMade ?: detail?.lastMade, LocalDate.now()),
         onBack = onBack,
         onCustomTimer = { showCustomTimer = true },
         onStartTimer = { label, seconds -> startTimer(label, seconds, slug, recipeName) },
@@ -182,6 +212,7 @@ fun RecipeDetailContent(
     cookMode: Boolean,
     onToggleCookMode: () -> Unit,
     onBack: (() -> Unit)?,
+    lastCooked: String? = null,
     onCustomTimer: () -> Unit,
     onStartTimer: (label: String, seconds: Long) -> Unit,
     photoUploading: Boolean = false,
@@ -268,6 +299,7 @@ fun RecipeDetailContent(
                 detail.prepTime?.takeIf { it.isNotBlank() }?.let { "Prep" to it },
                 detail.performTime?.takeIf { it.isNotBlank() }?.let { "Cook" to it },
                 detail.totalTime?.takeIf { it.isNotBlank() }?.let { "Total" to it },
+                lastCooked?.let { "Last cooked" to it.removePrefix("Cooked ") },
             )
             if (facts.isNotEmpty()) {
                 item {
