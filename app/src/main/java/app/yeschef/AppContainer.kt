@@ -4,6 +4,7 @@ import android.content.Context
 import app.yeschef.data.Repository
 import app.yeschef.data.ServerConfig
 import app.yeschef.data.SettingsStore
+import app.yeschef.data.cook.TimerManager
 import app.yeschef.data.local.YesChefDb
 import app.yeschef.data.remote.ApiFactory
 import app.yeschef.data.remote.MealieApi
@@ -39,6 +40,8 @@ class AppContainer(context: Context) {
         ApiFactory.create(serverUrl, ApiFactory.httpClient { token })
 
     val repository = Repository(db, ::api)
+
+    val timers = TimerManager(context)
 
     suspend fun saveConfig(config: ServerConfig) {
         settings.save(config)

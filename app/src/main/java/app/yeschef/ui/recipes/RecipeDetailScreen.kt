@@ -1,6 +1,8 @@
 package app.yeschef.ui.recipes
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,6 +16,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -40,7 +43,13 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yeschef.AppContainer
+import app.yeschef.data.cook.DetectedDuration
+import app.yeschef.data.cook.detectDurations
+import app.yeschef.data.cook.formatShort
 import app.yeschef.data.remote.IngredientDto
+import app.yeschef.ui.cook.CustomTimerDialog
+import app.yeschef.ui.cook.TimerChip
+import app.yeschef.ui.cook.rememberTimerStarter
 import app.yeschef.data.remote.recipeImageUrl
 import coil.compose.AsyncImage
 
@@ -62,6 +71,19 @@ fun RecipeDetailScreen(container: AppContainer, slug: String, onBack: (() -> Uni
     }
     val checkedIngredients = remember(slug) { mutableStateOf(setOf<Int>()) }
     val bodyStyle = if (cookMode) MaterialTheme.typography.titleLarge else MaterialTheme.typography.bodyLarge
+    val recipeName = detail?.name ?: entity?.name ?: "Timer"
+    val startTimer = rememberTimerStarter(container.timers)
+    var showCustomTimer by rememberSaveable { mutableStateOf(false) }
+    if (showCustomTimer) {
+        CustomTimerDialog(
+            defaultLabel = recipeName,
+            onDismiss = { showCustomTimer = false },
+            onStart = { label, seconds ->
+                startTimer(label, seconds, slug)
+                showCustomTimer = false
+            },
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -71,6 +93,7 @@ fun RecipeDetailScreen(container: AppContainer, slug: String, onBack: (() -> Uni
                     if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                 },
                 actions = {
+                    IconButton(onClick = { showCustomTimer = true }) { Icon(Icons.Filled.Timer, "New timer") }
                     IconButton(onClick = { cookMode = !cookMode }) {
                         Icon(
                             if (cookMode) Icons.Filled.LightMode else Icons.Outlined.LightMode,
@@ -145,7 +168,22 @@ fun RecipeDetailScreen(container: AppContainer, slug: String, onBack: (() -> Uni
                     }
                     Row {
                         Text("${index + 1}.", style = bodyStyle, fontWeight = FontWeight.Bold, modifier = Modifier.width(36.dp))
-                        Text(step.text, style = bodyStyle)
+                        Column {
+                            Text(step.text, style = bodyStyle)
+                            val found = remember(step.text, step.durationSeconds) { stepTimers(step.text, step.durationSeconds) }
+                            if (found.isNotEmpty()) {
+                                Row(
+                                    Modifier.horizontalScroll(rememberScrollState()).padding(top = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    found.forEach { d ->
+                                        TimerChip(formatShort(d.seconds)) {
+                                            startTimer("$recipeName · step ${index + 1}", d.seconds, slug)
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -165,3 +203,10 @@ private fun ingredientText(i: IngredientDto): String =
     i.display?.takeIf { it.isNotBlank() }
         ?: i.originalText?.takeIf { it.isNotBlank() }
         ?: listOfNotNull(i.unit?.name, i.food?.name, i.note).joinToString(" ")
+
+/** Times mentioned in the step text, plus the step's own duration from Mealie if it isn't already among them. */
+private fun stepTimers(text: String, durationSeconds: Int?): List<DetectedDuration> {
+    val found = detectDurations(text)
+    val fromMealie = durationSeconds?.toLong()?.takeIf { s -> s > 0 && found.none { it.seconds == s } }
+    return if (fromMealie != null) listOf(DetectedDuration(fromMealie, "")) + found else found
+}

@@ -1,5 +1,9 @@
 package app.yeschef.ui
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Restaurant
@@ -13,7 +17,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import app.yeschef.ui.cook.TimerTray
 import app.yeschef.AppContainer
 import app.yeschef.ui.mealplan.MealPlanScreen
 import app.yeschef.ui.recipes.RecipesScreen
@@ -45,14 +51,29 @@ fun YesChefRoot(container: AppContainer) {
             }
         },
     ) {
-        when (tab) {
-            Tab.Shopping -> ShoppingScreen(container)
-            Tab.Recipes -> RecipesScreen(container, openSlug = openRecipe, onOpen = { openRecipe = it })
-            Tab.MealPlan -> MealPlanScreen(container, onOpenRecipe = { slug ->
-                openRecipe = slug
-                tab = Tab.Recipes
-            })
-            Tab.Settings -> SettingsScreen(container)
+        Column(Modifier.fillMaxSize()) {
+            Box(Modifier.weight(1f)) { TabContent(tab, container, openRecipe, { openRecipe = it }, { tab = it }) }
+            // On the tablet the rail leaves the bottom edge to the system bar, so pad for it there.
+            TimerTray(container.timers, if (isWide()) Modifier.navigationBarsPadding() else Modifier)
         }
+    }
+}
+
+@Composable
+private fun TabContent(
+    tab: Tab,
+    container: AppContainer,
+    openRecipe: String?,
+    onOpenRecipe: (String?) -> Unit,
+    onSelectTab: (Tab) -> Unit,
+) {
+    when (tab) {
+        Tab.Shopping -> ShoppingScreen(container)
+        Tab.Recipes -> RecipesScreen(container, openSlug = openRecipe, onOpen = onOpenRecipe)
+        Tab.MealPlan -> MealPlanScreen(container, onOpenRecipe = { slug ->
+            onOpenRecipe(slug)
+            onSelectTab(Tab.Recipes)
+        })
+        Tab.Settings -> SettingsScreen(container)
     }
 }
