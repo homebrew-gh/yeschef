@@ -1,5 +1,6 @@
 package app.yeschef.ui.recipes
 
+import app.yeschef.ui.cook.MealRequest
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -70,7 +71,7 @@ import app.yeschef.ui.YcTopBar
 
 /** Recipe grid; on the tablet the selected recipe opens beside it. */
 @Composable
-fun RecipesScreen(container: AppContainer, openSlug: String?, onOpen: (String?) -> Unit) {
+fun RecipesScreen(container: AppContainer, openSlug: String?, onOpen: (String?) -> Unit, onCookMeal: (MealRequest) -> Unit = {}) {
     val recipes by remember { container.repository.recipes() }.collectAsStateWithLifecycle(emptyList())
     val config by container.config.collectAsStateWithLifecycle()
     val list: @Composable (Modifier) -> Unit = { modifier ->
@@ -79,7 +80,7 @@ fun RecipesScreen(container: AppContainer, openSlug: String?, onOpen: (String?) 
     // A recipe opens full screen with a back arrow, on the tablet as well as the phone.
     if (openSlug != null) {
         BackHandler { onOpen(null) }
-        RecipeDetailScreen(container, openSlug, onBack = { onOpen(null) })
+        RecipeDetailScreen(container, openSlug, onBack = { onOpen(null) }, onCookMeal = onCookMeal)
     } else {
         list(Modifier.fillMaxSize())
     }

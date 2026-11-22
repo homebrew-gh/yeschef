@@ -5,6 +5,7 @@ import app.yeschef.data.Repository
 import app.yeschef.data.ServerConfig
 import app.yeschef.data.ThemeMode
 import app.yeschef.data.SettingsStore
+import app.yeschef.data.cook.MealReminders
 import app.yeschef.data.cook.TimerManager
 import app.yeschef.data.local.YesChefDb
 import app.yeschef.data.remote.ApiFactory
@@ -51,6 +52,8 @@ class AppContainer(context: Context) {
     val repository = Repository(db, ::api)
 
     val timers = TimerManager(context)
+
+    val mealReminders = MealReminders(context)
 
     suspend fun saveConfig(config: ServerConfig) {
         settings.save(config)

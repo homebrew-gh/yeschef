@@ -19,7 +19,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.yeschef.ui.cook.CookMealScreen
+import app.yeschef.ui.cook.MealInProgressBar
+import app.yeschef.ui.cook.MealRequest
 import app.yeschef.ui.cook.TimerTray
+import java.time.Instant
+import java.time.ZoneId
 import app.yeschef.AppContainer
 import app.yeschef.ui.mealplan.MealPlanScreen
 import app.yeschef.ui.recipes.RecipesScreen
@@ -36,15 +43,34 @@ private enum class Tab(val label: String, val icon: ImageVector) {
 /** Bottom bar on the phone, navigation rail on the tablet (NavigationSuiteScaffold picks). */
 @Composable
 fun YesChefRoot(container: AppContainer) {
-    var tab by rememberSaveable { mutableStateOf(Tab.Shopping) }
+    // Opens on the cookbook; the shopping list is a tap away.
+    var tab by rememberSaveable { mutableStateOf(Tab.Recipes) }
     var openRecipe by rememberSaveable { mutableStateOf<String?>(null) }
+    // A meal being cooked together, shown over whichever tab is open.
+    var mealCode by rememberSaveable { mutableStateOf<String?>(null) }
+    val meal = mealCode?.let(MealRequest::decode)
+    val session by container.mealReminders.session.collectAsStateWithLifecycle()
+    val openSession = {
+        session?.let { s ->
+            val date = Instant.ofEpochMilli(s.readyAt).atZone(ZoneId.systemDefault()).toLocalDate()
+            mealCode = MealRequest(s.title, s.slugs, date, null).encode()
+        }
+    }
+    // Tapping a meal reminder opens the meal.
+    val openRequested by container.mealReminders.openRequested.collectAsStateWithLifecycle()
+    LaunchedEffect(openRequested, session) {
+        if (openRequested) {
+            openSession()
+            container.mealReminders.openHandled()
+        }
+    }
 
     NavigationSuiteScaffold(
         navigationSuiteItems = {
             Tab.entries.forEach { t ->
                 item(
                     selected = t == tab,
-                    onClick = { tab = t },
+                    onClick = { tab = t; mealCode = null },
                     icon = { Icon(t.icon, contentDescription = null) },
                     label = { Text(t.label) },
                 )
@@ -52,7 +78,14 @@ fun YesChefRoot(container: AppContainer) {
         },
     ) {
         Column(Modifier.fillMaxSize()) {
-            Box(Modifier.weight(1f)) { TabContent(tab, container, openRecipe, { openRecipe = it }, { tab = it }) }
+            Box(Modifier.weight(1f)) {
+                if (meal != null) {
+                    CookMealScreen(container, meal, onClose = { mealCode = null })
+                } else {
+                    TabContent(tab, container, openRecipe, { openRecipe = it }, { tab = it }, onCookMeal = { mealCode = it.encode() })
+                }
+            }
+            session?.takeIf { meal == null }?.let { s -> MealInProgressBar(s, onOpen = { openSession() }) }
             // On the tablet the rail leaves the bottom edge to the system bar, so pad for it there.
             TimerTray(container.timers, if (isWide()) Modifier.navigationBarsPadding() else Modifier)
         }
@@ -66,14 +99,19 @@ private fun TabContent(
     openRecipe: String?,
     onOpenRecipe: (String?) -> Unit,
     onSelectTab: (Tab) -> Unit,
+    onCookMeal: (MealRequest) -> Unit,
 ) {
     when (tab) {
         Tab.Shopping -> ShoppingScreen(container)
-        Tab.Recipes -> RecipesScreen(container, openSlug = openRecipe, onOpen = onOpenRecipe)
-        Tab.MealPlan -> MealPlanScreen(container, onOpenRecipe = { slug ->
-            onOpenRecipe(slug)
-            onSelectTab(Tab.Recipes)
-        })
+        Tab.Recipes -> RecipesScreen(container, openSlug = openRecipe, onOpen = onOpenRecipe, onCookMeal = onCookMeal)
+        Tab.MealPlan -> MealPlanScreen(
+            container,
+            onOpenRecipe = { slug ->
+                onOpenRecipe(slug)
+                onSelectTab(Tab.Recipes)
+            },
+            onCookMeal = onCookMeal,
+        )
         Tab.Settings -> SettingsScreen(container)
     }
 }

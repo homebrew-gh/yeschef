@@ -9,8 +9,10 @@ import app.yeschef.YesChefApp
 class TimerReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val id = intent.getIntExtra(EXTRA_ID, -1).takeIf { it >= 0 } ?: return
-        val timers = (context.applicationContext as YesChefApp).container.timers
+        val container = (context.applicationContext as YesChefApp).container
+        val timers = container.timers
         when (intent.action) {
+            ACTION_MEAL_STEP -> container.mealReminders.fire(id)
             ACTION_FIRE -> timers.fire(id)
             ACTION_PAUSE -> timers.pause(id)
             ACTION_RESUME -> timers.resume(id)
@@ -26,5 +28,6 @@ class TimerReceiver : BroadcastReceiver() {
         const val ACTION_RESUME = "app.yeschef.timer.RESUME"
         const val ACTION_ADD_MINUTE = "app.yeschef.timer.ADD_MINUTE"
         const val ACTION_DISMISS = "app.yeschef.timer.DISMISS"
+        const val ACTION_MEAL_STEP = "app.yeschef.meal.STEP"
     }
 }

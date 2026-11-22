@@ -1,5 +1,6 @@
 package app.yeschef
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -16,10 +17,16 @@ import app.yeschef.ui.setup.SetupScreen
 import app.yeschef.ui.theme.YesChefTheme
 
 class MainActivity : ComponentActivity() {
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val container = (application as YesChefApp).container
+        if (savedInstanceState == null) handleIntent(intent)
         setContent {
             val mode by container.themeMode.collectAsStateWithLifecycle()
             val dark = when (mode) {
@@ -40,6 +47,17 @@ class MainActivity : ComponentActivity() {
                 if (config == null) SetupScreen(container) else YesChefRoot(container)
             }
         }
+    }
+
+    companion object {
+        /** Set on a meal reminder's tap: open the meal being cooked. */
+        const val EXTRA_OPEN_MEAL = "open_meal"
+    }
+}
+
+private fun MainActivity.handleIntent(intent: Intent?) {
+    if (intent?.getBooleanExtra(MainActivity.EXTRA_OPEN_MEAL, false) == true) {
+        (application as YesChefApp).container.mealReminders.requestOpen()
     }
 }
 
