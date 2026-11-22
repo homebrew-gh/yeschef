@@ -47,6 +47,14 @@ import app.yeschef.ui.settings.ThemePicker
 import androidx.compose.foundation.layout.padding
 import app.yeschef.data.Cookbook
 import app.yeschef.ui.recipes.TagEditorContent
+import app.yeschef.data.cook.buildMealTimeline
+import app.yeschef.ui.cook.CookMealContent
+import app.yeschef.ui.cook.MealRecipeView
+import app.yeschef.ui.cook.mealInputs
+import app.yeschef.ui.recipes.SidePickerContent
+import app.yeschef.ui.theme.RecipeTagColors
+import java.time.ZoneId
+import java.time.ZonedDateTime
 import org.junit.Rule
 import org.junit.Test
 import java.time.LocalDate
@@ -153,6 +161,40 @@ class ScreenshotTest {
         }
     }
 
+    /** A slow-cooker dinner with two sides on one timeline, under way: the current step is marked. */
+    @Test fun mealTimeline() {
+        paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_6.copy(screenHeight = 4400))
+        phone(tab = 2) { Meal(started = true, now = Sample.at(17, 52)) }
+    }
+
+    /** The same meal on the tablet, planned in the morning before starting. */
+    @Test fun tabletMealTimeline() {
+        paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_C.copy(screenHeight = 3000))
+        paparazzi.snapshot {
+            YesChefTheme {
+                Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                    NavigationRail {
+                        tabs.forEachIndexed { i, (label, icon) ->
+                            NavigationRailItem(selected = i == 2, onClick = {}, icon = { Icon(icon, null) }, label = { Text(label) })
+                        }
+                    }
+                    Box(Modifier.weight(1f)) { Meal(started = false, now = Sample.at(9, 0)) }
+                }
+            }
+        }
+    }
+
+    @Test fun sidePicker() {
+        paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_6.copy(screenHeight = 2400))
+        paparazzi.snapshot {
+            YesChefTheme {
+                Box(Modifier.background(MaterialTheme.colorScheme.surfaceContainerLow).padding(top = 16.dp)) {
+                    SidePickerContent(Sample.recipes.filter { it.id != "r3" }, {}, {}, initialPicked = listOf("garlic-green-beans"))
+                }
+            }
+        }
+    }
+
     /** Tablet: the whole cookbook full width, in chapter sections. */
     @Test fun tabletRecipes() = tablet { RecipeGrid(Sample.recipes, null, null, {}, actions = { SyncIcon() }, today = Sample.today) }
 
@@ -238,7 +280,69 @@ private fun Detail(cookMode: Boolean, withBack: Boolean = true, servings: Double
     onPickPhoto = {},
 )
 
+@Composable
+private fun Meal(started: Boolean, now: Long) {
+    val views = Sample.mealRecipes.mapIndexed { i, d -> MealRecipeView(d.slug, d.name, d, RecipeTagColors[i]) }
+    CookMealContent(
+        title = "Pulled pork dinner",
+        recipes = views,
+        cookable = views,
+        timeline = buildMealTimeline(mealInputs(views)),
+        readyAt = Sample.at(18, 30),
+        now = now,
+        started = started,
+        nextReminder = if (started) "6:00 PM · Crispy smashed potatoes, step 2" else null,
+        keepScreenOn = started,
+        onToggleScreen = {},
+        onPickTime = {},
+        onUseEarliest = {},
+        onStart = {},
+        onFinish = {},
+        onBack = {},
+        onStartTimer = { _, _, _ -> },
+        zone = Sample.zone,
+    )
+}
+
 private object Sample {
+    val zone: ZoneId = ZoneId.of("America/New_York")
+    fun at(hour: Int, minute: Int): Long = ZonedDateTime.of(2026, 11, 23, hour, minute, 0, 0, zone).toInstant().toEpochMilli()
+
+    val mealRecipes = listOf(
+        RecipeDetailDto(
+            id = "r10", slug = "pulled-pork", name = "Slow cooker pulled pork",
+            prepTime = "15 minutes", performTime = "8 hours",
+            recipeIngredient = listOf(
+                IngredientDto(display = "4 lb pork shoulder"), IngredientDto(display = "2 tbsp brown sugar"),
+                IngredientDto(display = "1 tbsp smoked paprika"), IngredientDto(display = "1 cup barbecue sauce"),
+            ),
+            recipeInstructions = listOf(
+                StepDto(text = "Mix the brown sugar and smoked paprika and rub it all over the pork shoulder."),
+                StepDto(text = "Cook on low in the slow cooker for 8 hours, until it pulls apart easily."),
+                StepDto(text = "Shred the pork with two forks and stir in the barbecue sauce."),
+            ),
+        ),
+        RecipeDetailDto(
+            id = "r8", slug = "crispy-smashed-potatoes", name = "Crispy smashed potatoes",
+            totalTime = "50 minutes",
+            recipeIngredient = listOf(IngredientDto(display = "2 lb baby potatoes"), IngredientDto(display = "3 tbsp olive oil")),
+            recipeInstructions = listOf(
+                StepDto(text = "Boil the baby potatoes in salted water for 20 minutes, until tender."),
+                StepDto(text = "Drain, smash each one flat on a sheet pan and drizzle with the olive oil."),
+                StepDto(text = "Roast at 450°F for 25 minutes, until crisp."),
+            ),
+        ),
+        RecipeDetailDto(
+            id = "r7", slug = "garlic-green-beans", name = "Garlic green beans",
+            prepTime = "5 minutes", performTime = "10 minutes",
+            recipeIngredient = listOf(IngredientDto(display = "1 lb green beans"), IngredientDto(display = "3 cloves garlic, sliced")),
+            recipeInstructions = listOf(
+                StepDto(text = "Trim the green beans."),
+                StepDto(text = "Sauté with the garlic for 10 minutes, until blistered."),
+            ),
+        ),
+    )
+
     const val NOW = 1_700_000_000_000L
     val today: LocalDate = LocalDate.of(2026, 11, 23)
 
@@ -310,6 +414,7 @@ private object Sample {
     val mealPlan = listOf(
         MealPlanEntity(1, "2026-11-23", "breakfast", null, null, "r1", "banana-bread", "Banana bread"),
         MealPlanEntity(2, "2026-11-23", "dinner", null, null, "r3", "lasagna", "Classic lasagna"),
+        MealPlanEntity(6, "2026-11-23", "side", null, null, "r7", "garlic-green-beans", "Garlic green beans"),
         MealPlanEntity(3, "2026-11-24", "dinner", null, null, "r2", "chicken-tacos", "Chicken tacos with lime crema"),
         MealPlanEntity(4, "2026-11-25", "lunch", "Leftover lasagna", "Pack for work", null, null, null),
         MealPlanEntity(5, "2026-11-25", "dinner", null, null, "r4", "miso-salmon", "Miso glazed salmon"),

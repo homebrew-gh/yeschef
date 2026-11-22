@@ -1,0 +1,62 @@
+package app.yeschef.data.cook
+
+import kotlinx.serialization.Serializable
+
+/** A heads-up at a step's start time, so a long cook day doesn't need the app open. */
+@Serializable
+data class MealReminder(val id: Int, val at: Long, val title: String, val lines: List<String>)
+
+/** A meal being cooked: which recipes, when it should be ready, and the reminders set for it. */
+@Serializable
+data class MealSession(
+    val title: String,
+    val slugs: List<String>,
+    val readyAt: Long,
+    val reminders: List<MealReminder> = emptyList(),
+)
+
+/** After this long with nothing to do, the next step gets a reminder. */
+const val IDLE_GAP_SECONDS = 10 * 60L
+
+/**
+ * Picks the steps worth a notification: every recipe's first step ("Start the rice"), and
+ * any step that comes after a quiet stretch, like shredding the pork after eight hours in
+ * the slow cooker. Steps due at the same minute share one reminder. Steps already past
+ * [now] are left out.
+ */
+fun planReminders(
+    timeline: MealTimeline,
+    recipes: List<MealRecipeIn>,
+    readyAt: Long,
+    now: Long,
+    clock: (Long) -> String,
+): List<MealReminder> {
+    val due = mutableListOf<Pair<Long, String>>()
+    var previousStart: Long? = null
+    for (step in timeline.steps) {
+        val at = readyAt - step.startsBefore * 1000
+        val first = step.stepIndex == 0
+        val afterGap = previousStart?.let { (at - it) / 1000 >= IDLE_GAP_SECONDS } ?: true
+        previousStart = at
+        if (!first && !afterGap) continue
+        if (at < now) continue
+        val recipe = recipes[step.recipeIndex]
+        val what = recipe.steps.getOrNull(step.stepIndex)?.text?.let(::firstSentence)
+        val line = if (first) "Start ${recipe.name}" + (what?.let { ": $it" } ?: "")
+        else "${recipe.name}, step ${step.stepIndex + 1}" + (what?.let { ": $it" } ?: "")
+        due += at to line
+    }
+    return due.groupBy { it.first / 60_000 }.toSortedMap().values.mapIndexed { i, group ->
+        val at = group.first().first
+        val lines = group.map { it.second }
+        val head = lines.first().substringBefore(":")
+        val title = clock(at) + " · " + head + if (lines.size > 1) " (+${lines.size - 1} more)" else ""
+        MealReminder(i + 1, at, title, lines)
+    }
+}
+
+private fun firstSentence(text: String, max: Int = 70): String? {
+    val s = text.trim().split(Regex("(?<=[.!?])\\s+")).firstOrNull()?.trim()?.trimEnd('.')?.takeIf { it.isNotEmpty() } ?: return null
+    if (s.length <= max) return s
+    return s.take(max).substringBeforeLast(' ').trimEnd(',', ' ') + "…"
+}

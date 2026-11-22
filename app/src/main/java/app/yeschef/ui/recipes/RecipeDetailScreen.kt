@@ -1,6 +1,7 @@
 package app.yeschef.ui.recipes
 
 import android.net.Uri
+import app.yeschef.ui.cook.MealRequest
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -111,7 +112,7 @@ import app.yeschef.ui.cook.rememberTimerStarter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RecipeDetailScreen(container: AppContainer, slug: String, onBack: (() -> Unit)?) {
+fun RecipeDetailScreen(container: AppContainer, slug: String, onBack: (() -> Unit)?, onCookMeal: (MealRequest) -> Unit = {}) {
     val repo = container.repository
     val data by remember(slug) { repo.recipe(slug) }.collectAsStateWithLifecycle(null to null)
     val (entity, detail) = data
@@ -209,8 +210,24 @@ fun RecipeDetailScreen(container: AppContainer, slug: String, onBack: (() -> Uni
         }
     }
 
+    // "Add a side": pick sides, then cook them together with this recipe on one timeline.
+    var pickingSides by rememberSaveable { mutableStateOf(false) }
+    if (pickingSides) {
+        ModalBottomSheet(onDismissRequest = { pickingSides = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+            SidePickerContent(
+                recipes = library.filter { it.slug != slug },
+                onCancel = { pickingSides = false },
+                onCook = { sides ->
+                    pickingSides = false
+                    onCookMeal(MealRequest("$recipeName meal", listOf(slug) + sides, LocalDate.now(), null))
+                },
+            )
+        }
+    }
+
     RecipeDetailContent(
         title = recipeName,
+        onCookWithSides = if (detail != null) ({ pickingSides = true }) else null,
         detail = detail,
         notLoadedMessage = if (entity == null) "Recipe not found." else "This recipe hasn't been downloaded yet. Connect the VPN to load it.",
         serverUrl = config?.serverUrl,
@@ -255,6 +272,7 @@ fun RecipeDetailContent(
     lastCooked: String? = null,
     tagLine: List<String> = emptyList(),
     onEditTags: (() -> Unit)? = null,
+    onCookWithSides: (() -> Unit)? = null,
     initialServings: Double? = null,
     onCustomTimer: () -> Unit,
     onStartTimer: (label: String, seconds: Long) -> Unit,
@@ -376,6 +394,15 @@ fun RecipeDetailContent(
                 }
             }
 
+            if (onCookWithSides != null && !cookMode) {
+                item {
+                    TextButton(onClick = onCookWithSides, modifier = Modifier.padding(start = 8.dp, top = 4.dp)) {
+                        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Add a side and cook together")
+                    }
+                }
+            }
             item {
                 Row(Modifier.fillMaxWidth().padding(end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     SectionLabel("Ingredients", Modifier.weight(1f))
@@ -587,7 +614,7 @@ private fun NutritionCard(rows: List<Pair<String, String>>, modifier: Modifier =
 
 /** In cook mode, the ingredients a step uses, shown right under it with their amounts. */
 @Composable
-private fun StepIngredients(lines: List<Pair<Int, String>>, checked: Set<Int>, onToggle: (Int) -> Unit) {
+internal fun StepIngredients(lines: List<Pair<Int, String>>, checked: Set<Int>, onToggle: (Int) -> Unit) {
     val colors = MaterialTheme.colorScheme
     Surface(
         shape = MaterialTheme.shapes.medium,
@@ -629,7 +656,7 @@ private fun StepIngredients(lines: List<Pair<Int, String>>, checked: Set<Int>, o
     }
 }
 
-private fun stepIngredientsFor(detail: RecipeDetailDto): List<List<Int>> = ingredientsForSteps(
+internal fun stepIngredientsFor(detail: RecipeDetailDto): List<List<Int>> = ingredientsForSteps(
     detail.recipeIngredient.map { i ->
         val text = ingredientText(i)
         IngredientLine(i.referenceId, i.food?.name, text, isHeadingOnly = text.isBlank() && i.food == null)
@@ -673,13 +700,13 @@ private fun IngredientRow(text: String, done: Boolean, style: androidx.compose.u
     }
 }
 
-private fun ingredientText(i: IngredientDto): String =
+internal fun ingredientText(i: IngredientDto): String =
     i.display?.takeIf { it.isNotBlank() }
         ?: i.originalText?.takeIf { it.isNotBlank() }
         ?: listOfNotNull(i.unit?.name, i.food?.name, i.note).joinToString(" ")
 
 /** Times mentioned in the step text, plus the step's own duration from Mealie if it isn't already among them. */
-private fun stepTimers(text: String, durationSeconds: Int?): List<DetectedDuration> {
+internal fun stepTimers(text: String, durationSeconds: Int?): List<DetectedDuration> {
     val found = detectDurations(text)
     val fromMealie = durationSeconds?.toLong()?.takeIf { s -> s > 0 && found.none { it.seconds == s } }
     return if (fromMealie != null) listOf(DetectedDuration(fromMealie, "")) + found else found

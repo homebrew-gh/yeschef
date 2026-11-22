@@ -27,7 +27,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.material.icons.filled.SoupKitchen
+import androidx.compose.material3.FilledTonalButton
 import app.yeschef.AppContainer
+import app.yeschef.data.MealGroup
+import app.yeschef.data.groupMeals
+import app.yeschef.ui.cook.MealRequest
 import app.yeschef.data.local.MealPlanEntity
 import app.yeschef.ui.RecipeImage
 import app.yeschef.ui.SyncAction
@@ -38,14 +43,18 @@ import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
 
-private val mealOrder = listOf("breakfast", "lunch", "dinner", "side", "snack", "drink", "dessert")
-
 @Composable
-fun MealPlanScreen(container: AppContainer, onOpenRecipe: (String) -> Unit) {
+fun MealPlanScreen(container: AppContainer, onOpenRecipe: (String) -> Unit, onCookMeal: (MealRequest) -> Unit) {
     val today = remember { LocalDate.now() }
     val entries by remember { container.repository.mealPlan(today) }.collectAsStateWithLifecycle(emptyList())
     val config by container.config.collectAsStateWithLifecycle()
-    MealPlanContent(entries, today, config?.serverUrl, onOpenRecipe, actions = { SyncAction(container) })
+    MealPlanContent(entries, today, config?.serverUrl, onOpenRecipe, actions = { SyncAction(container) }, onCookMeal = onCookMeal)
+}
+
+/** "Pulled pork dinner": the main recipe's name and the meal. */
+fun mealTitle(group: MealGroup): String {
+    val main = group.entries.firstOrNull { it.recipeName != null }?.recipeName ?: return group.entryType.replaceFirstChar { it.uppercase() }
+    return if (group.entryType == "side") "$main and sides" else "$main ${group.entryType}"
 }
 
 /** Stateless meal plan, also used for screenshots. */
@@ -56,12 +65,10 @@ fun MealPlanContent(
     serverUrl: String?,
     onOpenRecipe: (String) -> Unit,
     actions: @Composable () -> Unit,
+    onCookMeal: (MealRequest) -> Unit = {},
 ) {
-    val byDay = remember(entries) {
-        entries.groupBy { it.date }.toSortedMap().mapValues { (_, day) ->
-            day.sortedBy { mealOrder.indexOf(it.entryType).let { i -> if (i < 0) 99 else i } }
-        }
-    }
+    // Each day's meals, with sides next to the main they go with.
+    val byDay = remember(entries) { groupMeals(entries).groupBy { it.date } }
     Scaffold(
         topBar = { YcTopBar("Meal plan", actions = { actions() }) },
         containerColor = MaterialTheme.colorScheme.background,
@@ -81,11 +88,30 @@ fun MealPlanContent(
                     )
                 }
             }
-            byDay.forEach { (date, day) ->
+            byDay.forEach { (date, meals) ->
                 item(key = "d-$date") { DayHeader(date, today) }
-                day.forEach { entry -> item(key = entry.id) { EntryCard(entry, serverUrl, onOpenRecipe) } }
+                meals.forEach { meal ->
+                    meal.entries.forEach { entry -> item(key = entry.id) { EntryCard(entry, serverUrl, onOpenRecipe) } }
+                    if (meal.cookable) {
+                        item(key = "cook-$date-${meal.entryType}") {
+                            CookTogetherButton(meal.slugs.size) {
+                                val day = runCatching { LocalDate.parse(date) }.getOrDefault(today)
+                                onCookMeal(MealRequest(mealTitle(meal), meal.slugs, day, meal.entryType))
+                            }
+                        }
+                    }
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun CookTogetherButton(count: Int, onClick: () -> Unit) {
+    FilledTonalButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+        Icon(Icons.Filled.SoupKitchen, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text("Cook this meal ($count recipes together)")
     }
 }
 
