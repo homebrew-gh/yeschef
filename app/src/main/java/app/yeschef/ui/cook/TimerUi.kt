@@ -7,11 +7,17 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.heightIn
@@ -22,7 +28,10 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -38,7 +47,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -80,6 +88,13 @@ fun TimerChip(text: String, onClick: () -> Unit) {
         onClick = onClick,
         label = { Text(text) },
         leadingIcon = { Icon(Icons.Filled.Timer, contentDescription = null, modifier = Modifier.size(18.dp)) },
+        shape = CircleShape,
+        colors = AssistChipDefaults.assistChipColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            labelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            leadingIconContentColor = MaterialTheme.colorScheme.primary,
+        ),
+        border = null,
     )
 }
 
@@ -94,47 +109,96 @@ fun TimerTray(timers: TimerManager, modifier: Modifier = Modifier) {
             delay(250)
         }
     }
-    Surface(tonalElevation = 3.dp, shadowElevation = 6.dp, modifier = modifier.fillMaxWidth()) {
+    TimerTrayContent(
+        list, now, modifier,
+        onAddMinute = { timers.addMinute(it) },
+        onPauseResume = { t -> if (t.running) timers.pause(t.id) else timers.resume(t.id) },
+        onDismiss = { timers.dismiss(it) },
+    )
+}
+
+/** Stateless timer tray, also used for screenshots. */
+@Composable
+fun TimerTrayContent(
+    list: List<CookTimer>,
+    now: Long,
+    modifier: Modifier = Modifier,
+    onAddMinute: (Int) -> Unit = {},
+    onPauseResume: (CookTimer) -> Unit = {},
+    onDismiss: (Int) -> Unit = {},
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        shadowElevation = 12.dp,
+        modifier = modifier.fillMaxWidth(),
+    ) {
         Column(
-            Modifier.heightIn(max = 260.dp).verticalScroll(rememberScrollState()).padding(vertical = 4.dp),
+            Modifier.heightIn(max = 280.dp).verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             list.sortedWith(compareByDescending<CookTimer> { it.done }.thenBy { it.remainingMs(now) }).forEach { t ->
-                TimerRow(t, now, timers)
+                TimerRow(t, now, onAddMinute, onPauseResume, onDismiss)
             }
         }
     }
 }
 
 @Composable
-private fun TimerRow(t: CookTimer, now: Long, timers: TimerManager) {
+private fun TimerRow(
+    t: CookTimer,
+    now: Long,
+    onAddMinute: (Int) -> Unit,
+    onPauseResume: (CookTimer) -> Unit,
+    onDismiss: (Int) -> Unit,
+) {
     val colors = MaterialTheme.colorScheme
+    val progress = if (t.durationMs <= 0) 0f else 1f - t.remainingMs(now).toFloat() / t.durationMs
     Surface(
-        color = if (t.done) colors.errorContainer else Color.Transparent,
+        shape = MaterialTheme.shapes.large,
+        color = if (t.done) colors.tertiaryContainer else colors.surface,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Row(Modifier.padding(horizontal = 12.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(44.dp)) {
+                CircularProgressIndicator(
+                    progress = { if (t.done) 1f else progress },
+                    color = if (t.done) colors.tertiary else colors.primary,
+                    trackColor = colors.primaryContainer,
+                    strokeWidth = 4.dp,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                Icon(Icons.Filled.Timer, contentDescription = null, tint = if (t.done) colors.tertiary else colors.primary, modifier = Modifier.size(20.dp))
+            }
+            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(t.label, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(t.label, style = MaterialTheme.typography.labelLarge, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
                     when {
                         t.done -> "Time's up!"
                         t.running -> formatClock((t.remainingMs(now) + 999) / 1000)
-                        else -> formatClock(t.pausedRemainingMs / 1000) + "  paused"
+                        else -> formatClock(t.pausedRemainingMs / 1000)
                     },
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontFamily = FontFamily.Monospace,
+                    style = MaterialTheme.typography.headlineSmall.copy(fontFamily = FontFamily.Default),
                     fontWeight = FontWeight.SemiBold,
-                    color = if (t.done) colors.onErrorContainer else colors.onSurface,
+                    color = when {
+                        t.done -> colors.onTertiaryContainer
+                        t.running -> colors.onSurface
+                        else -> colors.outline
+                    },
                 )
             }
-            TextButton(onClick = { timers.addMinute(t.id) }) { Text("+1 min") }
+            TextButton(onClick = { onAddMinute(t.id) }) { Text("+1 min") }
             if (!t.done) {
-                IconButton(onClick = { if (t.running) timers.pause(t.id) else timers.resume(t.id) }) {
+                IconButton(onClick = { onPauseResume(t) }) {
                     Icon(if (t.running) Icons.Filled.Pause else Icons.Filled.PlayArrow, if (t.running) "Pause" else "Resume")
                 }
-                IconButton(onClick = { timers.dismiss(t.id) }) { Icon(Icons.Filled.Close, "Cancel timer") }
+                IconButton(onClick = { onDismiss(t.id) }) { Icon(Icons.Filled.Close, "Cancel timer", tint = colors.outline) }
             } else {
-                Button(onClick = { timers.dismiss(t.id) }) { Text("Stop") }
+                Button(
+                    onClick = { onDismiss(t.id) },
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.tertiary, contentColor = colors.onTertiary),
+                ) { Text("Stop") }
             }
         }
     }

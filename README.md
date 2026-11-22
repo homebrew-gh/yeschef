@@ -22,6 +22,17 @@ way to use that data in the kitchen and the store.
 - **Offline-first**: everything is cached in a local database. Upcoming planned recipes are
   downloaded ahead of time so they open without a connection.
 
+## Look and feel
+
+White and light blue with soft gold accents, DM Serif Display for headings (SIL Open Font
+License, see `licenses/`), and a chef's hat icon that also works as an Android 13+ themed icon.
+Shopping items carry a colour stripe and tag for each recipe they came from, and the list can be
+filtered to one recipe.
+
+Screenshots of every main screen are rendered by Paparazzi (`app/src/test/java/.../screens`) and
+committed by CI to `app/src/test/snapshots/images` on each pull request. Locally:
+`./gradlew recordPaparazziDebug`.
+
 ## How sync works
 
 Mealie has no "changed since" query for lists and meal plans, so each sync pushes queued edits

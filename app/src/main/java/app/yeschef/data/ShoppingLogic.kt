@@ -13,6 +13,8 @@ data class ShoppingRow(
     val labelName: String?,
     val labelColor: String?,
     val pending: Boolean,
+    /** Recipes this item came from; empty for items added by hand. */
+    val recipeIds: List<String> = emptyList(),
 )
 
 data class ShoppingSection(
@@ -76,3 +78,15 @@ fun formatQuantity(q: Double): String =
 /** Returns a copy of a Mealie item JSON object with `checked` replaced. */
 fun JsonObject.withChecked(checked: Boolean): JsonObject =
     JsonObject(this + ("checked" to JsonPrimitive(checked)))
+
+/**
+ * Gives each recipe on a list a colour slot, in a stable order (by name), so two
+ * recipes on the same list never share a colour until the palette runs out.
+ */
+fun assignRecipeColors(recipeNames: Map<String, String>, paletteSize: Int): Map<String, Int> =
+    recipeNames.entries
+        .sortedWith(compareBy({ it.value.lowercase() }, { it.key }))
+        .mapIndexed { i, e -> e.key to i % paletteSize }
+        .toMap()
+
+fun parseRecipeIds(csv: String): List<String> = csv.split(',').map { it.trim() }.filter { it.isNotEmpty() }

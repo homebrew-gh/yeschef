@@ -1,3 +1,5 @@
 <resources>
-    <style name="Theme.YesChef" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.YesChef" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/yc_white</item>
+    </style>
 </resources>

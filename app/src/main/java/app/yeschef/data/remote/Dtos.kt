@@ -110,7 +110,19 @@ data class ShoppingListDto(
     val name: String? = null,
     val labelSettings: List<LabelSettingDto> = emptyList(),
     val listItems: List<JsonObject> = emptyList(),
+    val recipeReferences: List<ListRecipeRefDto> = emptyList(),
 )
+
+/** A recipe that was added to a shopping list. */
+@Serializable
+data class ListRecipeRefDto(
+    val recipeId: String,
+    val recipe: RecipeSummaryDto? = null,
+)
+
+/** Which recipe an item came from (an item merged from several recipes has several). */
+@Serializable
+data class ItemRecipeRefDto(val recipeId: String? = null)
 
 /**
  * The fields of a shopping list item that the app reads. The full JSON object is
@@ -128,6 +140,7 @@ data class ShoppingItemDto(
     val display: String? = null,
     val food: FoodDto? = null,
     val label: LabelDto? = null,
+    val recipeReferences: List<ItemRecipeRefDto> = emptyList(),
 )
 
 @Serializable
