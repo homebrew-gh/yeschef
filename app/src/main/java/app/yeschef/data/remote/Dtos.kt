@@ -82,6 +82,8 @@ data class StepDto(
     val title: String? = null,
     val summary: String? = null,
     val text: String = "",
+    /** Optional step time set in Mealie. */
+    val durationSeconds: Int? = null,
 )
 
 @Serializable

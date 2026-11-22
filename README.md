@@ -14,6 +14,11 @@ way to use that data in the kitchen and the store.
 - **Recipes**: searchable list and recipe detail with ingredients and steps. On the tablet the
   recipe opens beside the list. **Cook mode** (sun icon) keeps the screen awake and enlarges text.
 - **Meal plan**: the next three weeks, tap a meal to open its recipe.
+- **Cook timers**: times in recipe steps ("bake 25 minutes", "simmer 1 hr 15 min", "10-12 min")
+  show up as chips under the step; tap one to start a timer. Run as many as you like, with pause,
+  +1 min and cancel, from the tray at the bottom of every screen or from the notification. A
+  finished timer rings with your alarm sound until you stop it, even when the app is closed or the
+  screen is off. The timer icon on a recipe starts a custom timer.
 - **Offline-first**: everything is cached in a local database. Upcoming planned recipes are
   downloaded ahead of time so they open without a connection.
 
