@@ -1,41 +1,120 @@
+<p align="center">
+  <img src="zapstore/icon.png" alt="YesChef icon" width="96">
+</p>
+
 # YesChef
 
-A native Android app for [Mealie](https://mealie.io) running on a Start9 server, built for one
-household's Pixel phone and Pixel Tablet. Mealie stays the source of truth (an AI agent fills it
-with recipes, meal plans and grocery lists through Mealie's API); YesChef is the fast, offline-first
-way to use that data in the kitchen and the store.
+YesChef is a native Android app for [Mealie](https://mealie.io), the self-hosted recipe manager. It
+gives you your recipes, meal plan and shopping lists on an Android phone or tablet, and keeps working
+in the store or kitchen when you have no signal. Mealie stays the source of truth; YesChef caches
+everything locally and syncs edits back when it can reach your server.
 
-## What's in v0.1
+It's free, open source (MIT) and has no accounts, ads, tracking or subscription. It talks only to
+your own Mealie server.
 
-- **Server setup**: Mealie address plus an API token (or username and password, which is
-  exchanged for a token).
-- **Shopping lists**: grouped into store sections using Mealie labels, in the order set in the
-  list's label settings. Tick items or add new ones offline; edits queue and sync later.
-- **Recipes**: searchable list and recipe detail with ingredients and steps. On the tablet the
-  recipe opens beside the list. **Cook mode** (sun icon) keeps the screen awake and enlarges text.
-- **Meal plan**: the next three weeks, tap a meal to open its recipe.
-- **Cook timers**: times in recipe steps ("bake 25 minutes", "simmer 1 hr 15 min", "10-12 min")
-  show up as chips under the step; tap one to start a timer. Run as many as you like, with pause,
-  +1 min and cancel, from the tray at the bottom of every screen or from the notification. A
-  finished timer rings with your alarm sound until you stop it, even when the app is closed or the
-  screen is off. The timer icon on a recipe starts a custom timer.
-- **Offline-first**: everything is cached in a local database. Upcoming planned recipes are
-  downloaded ahead of time so they open without a connection.
+<p align="center">
+  <img src="app/src/test/snapshots/images/app.yeschef.screens_ScreenshotTest_shopping.png" alt="Shopping list sorted by aisle" width="24%">
+  <img src="app/src/test/snapshots/images/app.yeschef.screens_ScreenshotTest_recipes.png" alt="Cookbook" width="24%">
+  <img src="app/src/test/snapshots/images/app.yeschef.screens_ScreenshotTest_recipeCookMode.png" alt="Cook mode" width="24%">
+  <img src="app/src/test/snapshots/images/app.yeschef.screens_ScreenshotTest_shoppingDark.png" alt="Dark theme" width="24%">
+</p>
 
-## Look and feel
+## Features
 
-White and light blue with soft gold accents, DM Serif Display for headings (SIL Open Font
-License, see `licenses/`), and a chef's hat icon that also works as an Android 13+ themed icon.
-Shopping items carry a colour stripe and tag for each recipe they came from, and the list can be
-filtered to one recipe.
+- **Shopping lists sorted by aisle.** Items are grouped into store sections from Mealie's labels,
+  in the order you set in Mealie. Each item gets a colour stripe and tag for the recipe it came
+  from, and you can filter the list to one recipe. Tick items or add new ones offline.
+- **Multiple lists.** Switch, create, rename and delete lists. **Clear cart** removes everything
+  you've ticked, and **Uncheck all** starts the list over.
+- **Cookbook.** Recipes read like a cookbook, with chapters from Mealie categories and filter chips
+  from tags (see [the cookbook scheme](#the-cookbook-categories-and-tags)). Sort by name, newest, rating,
+  quickest or "not made in a while", or let the dice pick something.
+- **Cook mode.** Large text, screen stays awake, and each step shows the ingredients it needs
+  ("You'll need"). When you finish, YesChef offers to mark the recipe as cooked.
+- **Timers.** Times in the steps ("bake 25 minutes", "10-12 min") become chips you tap to start a
+  timer, labelled with the step and recipe. Run several at once from the tray or the notification.
+  A finished timer rings with your alarm sound, even when the app is closed.
+- **Servings scaler.** Scales every amount, including ones Mealie hasn't parsed.
+- **Nutrition.** Mealie's per-serving values, in a section that expands when tapped.
+- **Recipe photos.** Take one with the camera or pick one from the gallery.
+- **Meal plan.** The next three weeks; planned recipes are downloaded ahead so they open offline.
+- **Phone and tablet.** On a tablet the recipe opens beside the list.
+- **Light, dark or system theme.**
 
-Screenshots of every main screen are rendered by Paparazzi (`app/src/test/java/.../screens`) and
-committed by CI to `app/src/test/snapshots/images` on each pull request. Locally:
-`./gradlew recordPaparazziDebug`.
+## Screenshots
+
+| Shopping | Cart | Cookbook | Sides chapter |
+| --- | --- | --- | --- |
+| ![Shopping list](app/src/test/snapshots/images/app.yeschef.screens_ScreenshotTest_shopping.png) | ![Cart with ticked items](app/src/test/snapshots/images/app.yeschef.screens_ScreenshotTest_shoppingCart.png) | ![Cookbook](app/src/test/snapshots/images/app.yeschef.screens_ScreenshotTest_recipes.png) | ![Sides chapter](app/src/test/snapshots/images/app.yeschef.screens_ScreenshotTest_recipesSides.png) |
+| **Recipe** | **Cook mode** | **Meal plan** | **Dark theme** |
+| ![Recipe](app/src/test/snapshots/images/app.yeschef.screens_ScreenshotTest_recipeDetail.png) | ![Cook mode](app/src/test/snapshots/images/app.yeschef.screens_ScreenshotTest_recipeCookMode.png) | ![Meal plan](app/src/test/snapshots/images/app.yeschef.screens_ScreenshotTest_mealPlan.png) | ![Dark theme](app/src/test/snapshots/images/app.yeschef.screens_ScreenshotTest_shoppingDark.png) |
+
+On a tablet:
+
+![Tablet cookbook](app/src/test/snapshots/images/app.yeschef.screens_ScreenshotTest_tabletRecipes.png)
+
+These are rendered from the app's code by the screenshot tests, so they always match the current
+version. Sample recipes are made up.
+
+## What you need
+
+- **A Mealie server** (Mealie v3; developed against v3.31). Any Mealie install works. If you run a
+  [Start9](https://start9.com) server, [mealie-startos](https://github.com/homebrew-gh/mealie-startos)
+  packages Mealie for StartOS 0.4 and adds an optional AI connector for Claude and other assistants.
+- **An Android phone or tablet** running Android 10 or newer.
+- **A way to reach the server from your phone**: your home network, or a VPN such as WireGuard when
+  you're out (see [Reaching your server](#reaching-your-server)).
+
+## Install
+
+YesChef isn't on Google Play. Install the APK directly:
+
+1. On your phone or tablet, open the [latest release](https://github.com/homebrew-gh/yeschef/releases/latest)
+   and download `yeschef-<version>.apk`.
+2. Open it. Android asks you to allow installs from your browser or file manager the first time.
+3. To update, install a newer APK the same way. It replaces the app in place and keeps your data,
+   because every release is signed with the same key.
+
+YesChef is also listed on [Zapstore](https://zapstore.dev), which installs and updates it for you.
+
+## First run
+
+1. In Mealie, open your profile, go to **API Tokens**, create a token and copy it.
+2. In YesChef, enter your server address, for example `https://mealie.example.com` or
+   `http://192.168.1.20:9000`. YesChef adds `/api` itself.
+3. Paste the token and tap **Connect**. You can also sign in with your Mealie username and password
+   instead; YesChef exchanges them for a token and doesn't store the password.
+
+You can change the server, token and theme later in **Settings**.
+
+## Reaching your server
+
+YesChef needs to reach Mealie whenever it syncs, but works offline in between. At home your Wi-Fi is
+enough. Away from home, the simplest safe option is a VPN to your home network, so Mealie never has
+to be exposed to the internet:
+
+- **WireGuard** (or Tailscale, or your router's VPN): turn it on and use the address you'd use at
+  home. YesChef syncs automatically as soon as a VPN connects.
+- **Start9**: StartOS has WireGuard built in. Connect it, then use one of the addresses StartOS lists
+  for Mealie's **Web UI and API** interface.
+
+### HTTPS with your own certificate (Start9 and self-signed)
+
+Android apps don't trust certificate authorities you install yourself unless they opt in. YesChef
+opts in, so you only need to install your CA on the device once:
+
+1. Get the CA certificate. On Start9, download your server's **Root CA** from StartOS (see Start9's
+   guide to trusting your Root CA). For your own setup, use the CA that signed Mealie's certificate.
+2. On Android: **Settings > Security & privacy > More security settings > Encryption & credentials >
+   Install a certificate > CA certificate**, then pick the file. (Menu names vary a little by phone.)
+
+A certificate that is self-signed but not a CA can't be installed this way; put it behind a CA, or
+use plain `http://` inside the VPN. YesChef allows plain HTTP because the VPN already encrypts the
+traffic, but your token travels unencrypted if you use HTTP without a VPN.
 
 ## The cookbook: categories and tags
 
-The Recipes tab reads like a cookbook. Its chapters come from Mealie **categories**, and its filter chips come from **tags**. Give each recipe one category and as many tags as fit. This scheme is what the app expects, and it's what to tell an AI assistant that tags the library:
+The Recipes tab reads like a cookbook. Its chapters come from Mealie **categories**, and its filter chips come from **tags**. Give each recipe one category and as many tags as fit. This scheme is what the app expects:
 
 | Mealie field | Use it for | Values |
 | --- | --- | --- |
@@ -47,6 +126,15 @@ Common alternatives are understood too. "Main course", "Dinner" and "Entree" go 
 
 **Last cooked** is Mealie's "last made" date. When you leave cook mode the app asks "Mark as cooked?", and the date then shows on the recipe card. Sort by "Not made in a while" to find old favourites. The dice button picks a random recipe from what's on screen and skips anything cooked in the last two weeks.
 
+### Letting an AI assistant organise your library
+
+Tagging a big library by hand is tedious, so let an assistant do it. With
+[mealie-startos](https://github.com/homebrew-gh/mealie-startos), turn on its AI connector and add it
+to Claude (or another assistant that supports MCP connectors). The connector's recipe tools already
+describe this scheme, so you can just ask "sort all my recipes into chapters and tag them by
+protein", or "I made the chili last night" to set its last-cooked date. With other setups, paste the
+table above into your assistant's instructions and give it access to Mealie's API.
+
 ## Scaling and nutrition
 
 The **Serves** control next to Ingredients scales every amount, including the "You'll need" boxes in cook mode. It changes the number at the start of each ingredient line ("1 1/2 lb" becomes "2¼ lb"), so ingredients Mealie hasn't parsed scale too. Lines with no amount, like "salt to taste", are left as they are. Recipes without a serving count get a ×½ to ×4 multiplier instead. **Nutrition** shows Mealie's per-serving values in a small section that expands when tapped.
@@ -55,21 +143,63 @@ The **Serves** control next to Ingredients scales every amount, including the "Y
 
 Mealie has no "changed since" query for lists and meal plans, so each sync pushes queued edits
 first, then re-pulls recipes (summaries), shopping lists and the meal plan in full. For one
-household's data this is small. A sync runs when the WireGuard VPN connects, when the app comes
+household's data this is small. A sync runs when a VPN connects, when the app comes
 to the foreground, about every 30 minutes, and right after each edit (WorkManager retries with
 backoff while the server is unreachable). Local edits that haven't been sent are never overwritten
 by server data.
 
-## Installing and updating
+## Troubleshooting
 
-Every push to `main` builds a signed APK and publishes it as a GitHub Release
-(`build-N`). On the phone or tablet, open the repo's **Releases** page, download the newest
-`yeschef-0.2.N.apk` and install it; it updates the app in place, keeping your data.
+- **Setup can't connect.** Open the same address in the phone's browser. If that fails
+  too, the phone can't reach the server: check the VPN is on and the address and port are right.
+  If the browser warns about the certificate, install your CA (see above).
+- **Works in the browser but not in YesChef.** Check the address has no extra path (use
+  `https://host`, not `https://host/g/home`), and that the API token hasn't been deleted in Mealie.
+- **Shopping items aren't grouped by aisle.** Grouping uses Mealie labels on foods. Give foods a
+  label in Mealie (or let an assistant do it), and set the label order in the shopping list's
+  settings.
+- **Recipes have no chapters.** Give them Mealie categories (see the cookbook scheme above).
+- **"App not installed" when updating.** The installed copy was signed with a different key (for
+  example a debug build from CI). Uninstall it once, then install the release APK.
+- **Timer doesn't ring.** Allow notifications for YesChef, and on Android 12+ allow **Alarms &
+  reminders** in the app's settings.
+- **Edits don't show up in Mealie.** They're queued until the server is reachable. Open the app
+  with the VPN on, or pull down on the shopping list to sync now.
 
-All builds are signed with one key, stored only in repository secrets, and the version code
-rises with every build, so Android accepts each new APK as an update.
+## Contributing
 
-### One-time signing key setup
+YesChef is maintained as-is for one household's use. It's MIT-licensed, so you're welcome to fork
+it, and pull requests are welcome too: bug fixes, new features, translations, or a version for
+another platform. There's no roadmap and no promise of support, so please don't expect issues to be
+worked on unless you're bringing a fix. Keep pull requests small and focused, and include a
+screenshot test for UI changes (CI renders the screenshots onto the pull request).
+
+## Development
+
+### Building
+
+Requires JDK 17 and the Android SDK (API 35).
+
+```sh
+./gradlew assembleDebug        # app/build/outputs/apk/debug/app-debug.apk
+./gradlew testDebugUnitTest
+```
+
+Every push and pull request is built by GitHub Actions; the debug APK is attached to the run as
+the `yeschef-debug-apk` artifact, so you can sideload it without a local Android setup.
+
+### Layout
+
+```
+app/src/main/java/app/yeschef/
+  data/remote/   Mealie REST API (Retrofit + kotlinx.serialization)
+  data/local/    Room cache and queued edits
+  data/          Repository (sync), shopping sort logic, settings
+  data/sync/     WorkManager sync worker and scheduling
+  ui/            Compose screens: setup, shopping, recipes, meal plan, settings
+```
+
+### Release signing key (maintainers and forks)
 
 Run on any computer with a JDK (`keytool` also ships with Android Studio):
 
@@ -94,35 +224,14 @@ Keep `yeschef.jks` and its password somewhere safe (a password manager), then de
 `.b64` file. If the key is ever lost, the next build can't update the app and you'd have to
 uninstall once. Without the secrets, CI still builds but signs with a throwaway key.
 
-## Connecting to Start9 over WireGuard
+### Publishing to Zapstore
 
-1. Connect the WireGuard VPN on the device.
-2. StartOS signs its HTTPS certificates with its own Root CA. Download it from StartOS and
-   install it on the device: *Settings > Security & privacy > More security settings > Encryption
-   & credentials > Install a certificate > CA certificate*. YesChef's network security config
-   trusts user-installed CAs (Android apps don't by default).
-3. In Mealie, create an API token (profile > API Tokens) and paste it with the server address,
-   for example `https://<your-mealie-address>` (YesChef adds `/api`).
+The listing is configured in [`zapstore.yaml`](zapstore.yaml), with the icon in `zapstore/`. See
+[`zapstore/PUBLISHING.md`](zapstore/PUBLISHING.md) for the one-time setup and how each release gets
+published.
 
-## Building
+## License
 
-Requires JDK 17 and the Android SDK (API 35).
-
-```sh
-./gradlew assembleDebug        # app/build/outputs/apk/debug/app-debug.apk
-./gradlew testDebugUnitTest
-```
-
-Every push and pull request is built by GitHub Actions; the debug APK is attached to the run as
-the `yeschef-debug-apk` artifact, so you can sideload it without a local Android setup.
-
-## Layout
-
-```
-app/src/main/java/app/yeschef/
-  data/remote/   Mealie REST API (Retrofit + kotlinx.serialization)
-  data/local/    Room cache and queued edits
-  data/          Repository (sync), shopping sort logic, settings
-  data/sync/     WorkManager sync worker and scheduling
-  ui/            Compose screens: setup, shopping, recipes, meal plan, settings
-```
+YesChef is released under the [MIT License](LICENSE). DM Serif Display is under the SIL Open Font
+License (see `licenses/`). Mealie is a separate project by the Mealie contributors; YesChef isn't
+affiliated with it.

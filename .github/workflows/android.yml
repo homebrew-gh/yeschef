@@ -60,6 +60,36 @@ jobs:
           files: yeschef-*.apk
           make_latest: true
 
+  # Publishes each new release to Zapstore (see zapstore/PUBLISHING.md). Uses a
+  # delegate Nostr key named in the developer's C1 proof, never the main key.
+  # Skipped until the ZAPSTORE_SIGN_WITH secret is set.
+  zapstore:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      SIGN_WITH: ${{ secrets.ZAPSTORE_SIGN_WITH }}
+    steps:
+      - name: Check for Zapstore key
+        id: key
+        run: |
+          if [ -n "$SIGN_WITH" ]; then echo "set=true" >> "$GITHUB_OUTPUT"; else echo "ZAPSTORE_SIGN_WITH not set; skipping"; fi
+      - uses: actions/checkout@v4
+        if: steps.key.outputs.set == 'true'
+      - uses: actions/setup-go@v5
+        if: steps.key.outputs.set == 'true'
+        with:
+          go-version: stable
+      - name: Publish to Zapstore
+        if: steps.key.outputs.set == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          go install github.com/zapstore/zsp/v2/cmd/zsp@v2.0.1
+          "$(go env GOPATH)/bin/zsp" publish -q --json
+
   # Renders the screenshot tests and commits the images to the PR branch,
   # so design changes can be reviewed right on the pull request.
   screenshots:
