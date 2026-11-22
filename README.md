@@ -75,6 +75,9 @@ YesChef isn't on Google Play. Install the APK directly:
 3. To update, install a newer APK the same way. It replaces the app in place and keeps your data,
    because every release is signed with the same key.
 
+You can also let [Obtainium](https://obtainium.imranr.dev) keep it up to date: add
+`https://github.com/homebrew-gh/yeschef` as an app.
+
 YesChef is also listed on [Zapstore](https://zapstore.dev), which installs and updates it for you.
 
 ## First run
