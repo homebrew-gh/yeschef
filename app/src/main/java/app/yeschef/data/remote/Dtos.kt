@@ -189,4 +189,7 @@ data class MealPlanEntryDto(
 )
 
 @Serializable
+data class ParseIngredientsBody(val ingredients: List<String>, val parser: String = "nlp")
+
+@Serializable
 data class UpdateImageResponse(val image: String? = null)

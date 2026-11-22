@@ -84,5 +84,9 @@ data class PendingOpEntity(
         const val DELETE_ITEM = "delete_item"
         /** Set a recipe's categories and tags: itemId is the slug, listId holds {"c":[...],"t":[...]} names. */
         const val SET_ORGANIZERS = "set_organizers"
+        /** Save a hand edit of a recipe: itemId is the recipe id, listId holds a RecipeChange as JSON. */
+        const val SAVE_RECIPE = "save_recipe"
+        /** Add a recipe to a shopping list: itemId is the recipe id, listId holds a ListAddition as JSON. */
+        const val ADD_RECIPE_TO_LIST = "add_recipe_to_list"
     }
 }

@@ -14,6 +14,8 @@ import app.yeschef.data.remote.MealieJson
 import app.yeschef.data.remote.NewShoppingItem
 import app.yeschef.data.remote.RecipeDetailDto
 import app.yeschef.data.remote.ShoppingItemDto
+import app.yeschef.data.remote.ParseIngredientsBody
+import app.yeschef.data.cook.scaleIngredient
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -120,10 +122,12 @@ class Repository(
 
     // List management needs the server: Mealie owns the list ids.
 
-    suspend fun createList(name: String) {
+    /** Creates a list on the server and returns its id. */
+    suspend fun createList(name: String): String? {
         val api = apiProvider() ?: error("Not connected")
-        api.createShoppingList(JsonObject(mapOf("name" to JsonPrimitive(name.trim()))))
+        val created = api.createShoppingList(JsonObject(mapOf("name" to JsonPrimitive(name.trim()))))
         sync()
+        return created.string("id")
     }
 
     suspend fun renameList(id: String, name: String) {
@@ -171,6 +175,128 @@ class Repository(
         api.patchRecipe(slug, JsonObject(mapOf("recipeCategory" to categories, "tags" to tags)))
     }
 
+    /**
+     * Saves a hand edit of a recipe. Shown at once and sent with the next sync, so it
+     * works offline. Mealie re-reads new and changed ingredient lines when it gets them,
+     * so they scale and go on the shopping list like any other.
+     */
+    suspend fun saveRecipe(slug: String, detail: RecipeDetailDto, draft: RecipeDraft): Boolean {
+        val change = draft.changesFrom(detail) ?: return false
+        val updated = detail.withChange(change)
+        db.recipes().setDetail(slug, MealieJson.encodeToString(updated))
+        db.recipes().setSummary(slug, updated.name, updated.description, updated.totalTime, updated.recipeYield)
+        db.shopping().enqueue(
+            PendingOpEntity(kind = PendingOpEntity.SAVE_RECIPE, itemId = detail.id, listId = MealieJson.encodeToString(change)),
+        )
+        return true
+    }
+
+    /** The slug a recipe has now (Mealie changes it when the recipe is renamed). */
+    suspend fun slugOf(recipeId: String): String? = db.recipes().byId(recipeId)?.slug
+
+    private suspend fun pushRecipe(api: MealieApi, json: String) {
+        val change = MealieJson.decodeFromString<RecipeChange>(json)
+        val raw = api.recipeRaw(change.recipeId)
+        val oldSlug = raw.string("slug")
+        val parsed = parseLines(api, change)
+        val saved = api.patchRecipeJson(change.recipeId, buildRecipePatch(raw, change, parsed))
+        val detail = MealieJson.decodeFromJsonElement<RecipeDetailDto>(saved)
+        db.recipes().setSlugAndDetail(detail.id, detail.slug, MealieJson.encodeToString(detail))
+        if (oldSlug != null && oldSlug != detail.slug) db.shopping().renameRecipeOps(oldSlug, detail.slug)
+    }
+
+    /**
+     * Runs Mealie's parser over the new and changed lines. Foods and units it doesn't
+     * know yet are created, as Mealie's own parse page does. If the parser fails, the
+     * lines are saved as plain text.
+     */
+    private suspend fun parseLines(api: MealieApi, change: RecipeChange): Map<Int, JsonObject> {
+        val lines = change.ingredients ?: return emptyMap()
+        val todo = change.linesToParse()
+        if (todo.isEmpty()) return emptyMap()
+        val results = try {
+            api.parseIngredients(ParseIngredientsBody(todo.map { lines[it].text }))
+        } catch (e: HttpException) {
+            if (e.code() == 401) throw e
+            emptyList()
+        }
+        val foods = Lookup({ api.foods().items }, { api.createFood(it) })
+        val units = Lookup({ api.units().items }, { api.createUnit(it) })
+        return todo.mapIndexed { n, index ->
+            val ing = results.getOrNull(n)?.get("ingredient") as? JsonObject
+            val food = ing?.get("food")?.let { if (it.needsId()) foods.resolve(it as JsonObject) else it }
+            val unit = ing?.get("unit")?.let { if (it.needsId()) units.resolve(it as JsonObject) else it }
+            index to parsedIngredient(ing, lines[index].text, food, unit)
+        }.toMap()
+    }
+
+    /** Finds a food or unit by name (or plural/abbreviation), creating it once if Mealie has none. */
+    private class Lookup(val all: suspend () -> List<JsonObject>, val create: suspend (JsonObject) -> JsonObject) {
+        private var known: MutableList<JsonObject>? = null
+        suspend fun resolve(o: JsonObject): JsonObject {
+            val name = o.string("name")!!.trim()
+            val list = known ?: all().toMutableList().also { known = it }
+            list.firstOrNull { k ->
+                listOf("name", "pluralName", "abbreviation", "pluralAbbreviation").any { k.string(it)?.equals(name, ignoreCase = true) == true }
+            }?.let { return it }
+            return create(JsonObject(mapOf("name" to JsonPrimitive(name)))).also { list += it }
+        }
+    }
+
+    /**
+     * Adds a recipe's ingredients to a shopping list, scaled, leaving out the ones in
+     * [skip] (indexes into the recipe's ingredients). The lines show on the list at once;
+     * Mealie merges them with what's there on the next sync.
+     */
+    suspend fun addRecipeToList(listId: String, detail: RecipeDetailDto, scale: Double, skip: Set<Int>) {
+        val keep = detail.recipeIngredient.withIndex().filter { (i, ing) -> i !in skip && !isHeadingOnly(ing) }
+        if (keep.isEmpty()) return
+        val dao = db.shopping()
+        val localIds = keep.map { (_, ing) ->
+            val text = scaleIngredient(ingredientLineText(ing), scale)
+            val id = "local-" + UUID.randomUUID()
+            dao.upsertItem(
+                ShoppingItemEntity(
+                    id = id, listId = listId, text = text, note = text, checked = false,
+                    position = Int.MAX_VALUE, labelId = null, labelName = null, labelColor = null,
+                    rawJson = null, pending = true, recipeIds = detail.id,
+                ),
+            )
+            id
+        }
+        val addition = ListAddition(
+            list = listId, scale = scale,
+            refs = keep.mapNotNull { it.value.referenceId }, indexes = keep.filter { it.value.referenceId == null }.map { it.index },
+            local = localIds,
+        )
+        dao.enqueue(PendingOpEntity(kind = PendingOpEntity.ADD_RECIPE_TO_LIST, itemId = detail.id, listId = MealieJson.encodeToString(addition)))
+    }
+
+    private suspend fun pushListAddition(api: MealieApi, recipeId: String, json: String) {
+        val add = MealieJson.decodeFromString<ListAddition>(json)
+        val raw = api.recipeRaw(recipeId)
+        val ingredients = (raw["recipeIngredient"] as? JsonArray).orEmpty().filterIsInstance<JsonObject>()
+        val picked = selectIngredients(ingredients, add.refs.toSet(), add.indexes.toSet())
+        if (picked.isNotEmpty()) {
+            api.addRecipesToList(
+                add.list,
+                JsonArray(
+                    listOf(
+                        JsonObject(
+                            mapOf(
+                                "recipeId" to JsonPrimitive(recipeId),
+                                "recipeIncrementQuantity" to JsonPrimitive(add.scale),
+                                "recipeIngredients" to JsonArray(picked),
+                            ),
+                        ),
+                    ),
+                ),
+            )
+        }
+        // The server's lines arrive with the pull; until then the stand-ins showed them.
+        add.local.forEach { db.shopping().deleteItem(it) }
+    }
+
     /** Marks a recipe as cooked now. Shown at once; sent to Mealie with the next sync. */
     suspend fun markCooked(slug: String) {
         val now = java.time.OffsetDateTime.now().toString()
@@ -200,6 +326,9 @@ class Repository(
     /** Opening a recipe fetches it fresh if we can; the cached copy is shown meanwhile. */
     suspend fun refreshRecipe(slug: String) {
         val api = apiProvider() ?: return
+        // Don't overwrite an edit that hasn't reached Mealie yet.
+        val id = db.recipes().get(slug)?.id
+        if (id != null && db.shopping().pendingKindCount(id, PendingOpEntity.SAVE_RECIPE) > 0) return
         runCatching { cacheDetail(api, slug) }
     }
 
@@ -224,13 +353,18 @@ class Repository(
 
     private suspend fun pushPending(api: MealieApi) {
         val dao = db.shopping()
-        for (op in dao.pendingOps()) {
+        // One at a time from the front of the queue: a pushed edit can rewrite the ones
+        // after it (a renamed recipe gets a new slug).
+        while (true) {
+            val op = dao.firstPendingOp() ?: break
             val item = dao.item(op.itemId)
             try {
                 when {
                     op.kind == PendingOpEntity.LAST_MADE -> api.setLastMade(op.itemId, LastMadeBody(op.listId))
                     op.kind == PendingOpEntity.DELETE_ITEM -> api.deleteShoppingItem(op.itemId)
                     op.kind == PendingOpEntity.SET_ORGANIZERS -> pushOrganizers(api, op.itemId, op.listId)
+                    op.kind == PendingOpEntity.SAVE_RECIPE -> pushRecipe(api, op.listId)
+                    op.kind == PendingOpEntity.ADD_RECIPE_TO_LIST -> pushListAddition(api, op.itemId, op.listId)
                     item == null -> Unit
                     op.kind == PendingOpEntity.CREATE -> {
                         api.createShoppingItem(
@@ -249,9 +383,22 @@ class Repository(
                 // 4xx other than auth means this edit can never succeed (e.g. the item was
                 // deleted on the server). Drop it rather than block the queue forever.
                 if (e.code() == 401 || e.code() >= 500) throw e
+                dropped(api, op)
             }
             dao.deleteOp(op.opId)
             if (item != null && dao.pendingCountFor(item.id) == 0) dao.clearPending(item.id)
+        }
+    }
+
+    /** Undoes what a dropped edit showed locally, so the app matches Mealie again. */
+    private suspend fun dropped(api: MealieApi, op: PendingOpEntity) {
+        when (op.kind) {
+            PendingOpEntity.SAVE_RECIPE -> {
+                val id = MealieJson.decodeFromString<RecipeChange>(op.listId).recipeId
+                db.recipes().byId(id)?.let { runCatching { cacheDetail(api, it.slug) } }
+            }
+            PendingOpEntity.ADD_RECIPE_TO_LIST ->
+                MealieJson.decodeFromString<ListAddition>(op.listId).local.forEach { db.shopping().deleteItem(it) }
         }
     }
 
@@ -325,6 +472,16 @@ class Repository(
         )
     }
 }
+
+/** A queued "add recipe to shopping list": which lines (by reference id, else index), how scaled, and the local stand-in rows. */
+@kotlinx.serialization.Serializable
+private data class ListAddition(
+    val list: String,
+    val scale: Double,
+    val refs: List<String>,
+    val indexes: List<Int>,
+    val local: List<String>,
+)
 
 /** A queued category/tag change, by name. Short keys keep the queue row small. */
 @kotlinx.serialization.Serializable

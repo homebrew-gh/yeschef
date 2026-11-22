@@ -1,6 +1,14 @@
 package app.yeschef.ui.recipes
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material.icons.filled.AddShoppingCart
+import androidx.compose.material.icons.filled.Edit
+import app.yeschef.data.RecipeDraft
+import app.yeschef.data.changesFrom
+import app.yeschef.data.remote.MealieJson
 import app.yeschef.ui.cook.MealRequest
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
@@ -112,12 +120,25 @@ import app.yeschef.ui.cook.rememberTimerStarter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RecipeDetailScreen(container: AppContainer, slug: String, onBack: (() -> Unit)?, onCookMeal: (MealRequest) -> Unit = {}) {
+fun RecipeDetailScreen(
+    container: AppContainer,
+    slug: String,
+    onBack: (() -> Unit)?,
+    onCookMeal: (MealRequest) -> Unit = {},
+    onSlugChanged: (String) -> Unit = {},
+) {
     val repo = container.repository
     val data by remember(slug) { repo.recipe(slug) }.collectAsStateWithLifecycle(null to null)
     val (entity, detail) = data
     val config by container.config.collectAsStateWithLifecycle()
     LaunchedEffect(slug) { repo.refreshRecipe(slug) }
+    // Renaming a recipe changes its slug in Mealie; follow it once the sync brings it back.
+    var recipeId by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(entity?.id) { entity?.id?.let { recipeId = it } }
+    LaunchedEffect(entity == null, recipeId) {
+        val id = recipeId
+        if (entity == null && id != null) repo.slugOf(id)?.takeIf { it != slug }?.let(onSlugChanged)
+    }
 
     // Cook mode keeps the screen awake while this recipe is open.
     var cookMode by rememberSaveable { mutableStateOf(false) }
@@ -225,8 +246,72 @@ fun RecipeDetailScreen(container: AppContainer, slug: String, onBack: (() -> Uni
         }
     }
 
+    // Hand edits: the whole recipe in a full-screen editor.
+    var draft by rememberSaveable(stateSaver = DraftSaver) { mutableStateOf<RecipeDraft?>(null) }
+    var askDiscard by rememberSaveable { mutableStateOf(false) }
+    val editing = draft
+    if (editing != null && detail != null) {
+        val dirty = editing.changesFrom(detail) != null
+        val cancel: () -> Unit = { if (dirty) { askDiscard = true } else { draft = null } }
+        BackHandler(onBack = cancel)
+        if (askDiscard) {
+            AlertDialog(
+                onDismissRequest = { askDiscard = false },
+                title = { Text("Discard changes?") },
+                text = { Text("Your edits to $recipeName haven't been saved.") },
+                confirmButton = { TextButton(onClick = { askDiscard = false; draft = null }) { Text("Discard") } },
+                dismissButton = { TextButton(onClick = { askDiscard = false }) { Text("Keep editing") } },
+            )
+        }
+        RecipeEditorContent(
+            draft = editing,
+            onChange = { draft = it },
+            onCancel = cancel,
+            onSave = {
+                draft = null
+                scope.launch {
+                    if (repo.saveRecipe(slug, detail, editing)) {
+                        SyncScheduler.requestSync(context)
+                        snackbar.showSnackbar("Recipe saved")
+                    }
+                }
+            },
+        )
+        return
+    }
+
+    // Add to grocery list: pick a list, servings, and what you already have.
+    var addingToList by rememberSaveable { mutableStateOf(false) }
+    val lists by remember { repo.shoppingLists() }.collectAsStateWithLifecycle(emptyList())
+    if (addingToList && detail != null) {
+        ModalBottomSheet(onDismissRequest = { addingToList = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+            AddToListContent(
+                recipeName = detail.name,
+                lines = detail.recipeIngredient.withIndex()
+                    .filterNot { app.yeschef.data.isHeadingOnly(it.value) }
+                    .map { it.index to ingredientText(it.value) },
+                baseServings = baseServings(detail.recipeServings, detail.recipeYield),
+                lists = lists.map { it.id to it.name },
+                initialListId = null,
+                onCreateList = { name -> repo.createList(name) },
+                onCancel = { addingToList = false },
+                onAdd = { listId, scale, skip ->
+                    addingToList = false
+                    val listName = lists.firstOrNull { it.id == listId }?.name ?: "the list"
+                    scope.launch {
+                        repo.addRecipeToList(listId, detail, scale, skip)
+                        SyncScheduler.requestSync(context)
+                        snackbar.showSnackbar("Added to $listName")
+                    }
+                },
+            )
+        }
+    }
+
     RecipeDetailContent(
         title = recipeName,
+        onEdit = if (detail != null) ({ draft = RecipeDraft.of(detail) }) else null,
+        onAddToList = if (detail != null) ({ addingToList = true }) else null,
         onCookWithSides = if (detail != null) ({ pickingSides = true }) else null,
         detail = detail,
         notLoadedMessage = if (entity == null) "Recipe not found." else "This recipe hasn't been downloaded yet. Connect the VPN to load it.",
@@ -260,6 +345,7 @@ private fun photoError(e: Throwable): String = when (e) {
 }
 
 /** Stateless recipe page, also used for screenshots. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun RecipeDetailContent(
     title: String,
@@ -273,6 +359,8 @@ fun RecipeDetailContent(
     tagLine: List<String> = emptyList(),
     onEditTags: (() -> Unit)? = null,
     onCookWithSides: (() -> Unit)? = null,
+    onEdit: (() -> Unit)? = null,
+    onAddToList: (() -> Unit)? = null,
     initialServings: Double? = null,
     onCustomTimer: () -> Unit,
     onStartTimer: (label: String, seconds: Long) -> Unit,
@@ -300,6 +388,9 @@ fun RecipeDetailContent(
                     if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                 },
                 actions = {
+                    if (onEdit != null && !cookMode) {
+                        IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, "Edit recipe") }
+                    }
                     if (onEditTags != null && !cookMode) {
                         IconButton(onClick = onEditTags) { Icon(Icons.AutoMirrored.Filled.Label, "Edit chapter and tags") }
                     }
@@ -394,12 +485,23 @@ fun RecipeDetailContent(
                 }
             }
 
-            if (onCookWithSides != null && !cookMode) {
+            if ((onCookWithSides != null || onAddToList != null) && !cookMode) {
                 item {
-                    TextButton(onClick = onCookWithSides, modifier = Modifier.padding(start = 8.dp, top = 4.dp)) {
-                        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Add a side and cook together")
+                    FlowRow(Modifier.padding(start = 8.dp, top = 4.dp, end = 8.dp)) {
+                        if (onAddToList != null) {
+                            TextButton(onClick = onAddToList) {
+                                Icon(Icons.Filled.AddShoppingCart, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Add to grocery list")
+                            }
+                        }
+                        if (onCookWithSides != null) {
+                            TextButton(onClick = onCookWithSides) {
+                                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Add a side and cook together")
+                            }
+                        }
                     }
                 }
             }
@@ -700,10 +802,13 @@ private fun IngredientRow(text: String, done: Boolean, style: androidx.compose.u
     }
 }
 
-internal fun ingredientText(i: IngredientDto): String =
-    i.display?.takeIf { it.isNotBlank() }
-        ?: i.originalText?.takeIf { it.isNotBlank() }
-        ?: listOfNotNull(i.unit?.name, i.food?.name, i.note).joinToString(" ")
+/** Keeps an open editor's draft across rotation. */
+private val DraftSaver = androidx.compose.runtime.saveable.Saver<RecipeDraft?, String>(
+    save = { d -> d?.let { MealieJson.encodeToString(RecipeDraft.serializer(), it) } ?: "" },
+    restore = { s -> if (s.isEmpty()) null else runCatching { MealieJson.decodeFromString(RecipeDraft.serializer(), s) }.getOrNull() },
+)
+
+internal fun ingredientText(i: IngredientDto): String = app.yeschef.data.ingredientLineText(i)
 
 /** Times mentioned in the step text, plus the step's own duration from Mealie if it isn't already among them. */
 internal fun stepTimers(text: String, durationSeconds: Int?): List<DetectedDuration> {
