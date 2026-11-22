@@ -82,5 +82,7 @@ data class PendingOpEntity(
         const val LAST_MADE = "last_made"
         /** Delete a shopping item on the server; the local row is already gone. */
         const val DELETE_ITEM = "delete_item"
+        /** Set a recipe's categories and tags: itemId is the slug, listId holds {"c":[...],"t":[...]} names. */
+        const val SET_ORGANIZERS = "set_organizers"
     }
 }

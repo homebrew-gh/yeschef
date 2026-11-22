@@ -104,6 +104,43 @@ object Cookbook {
         return chapterOrder(recipes).map { Section(it, sorted(byChapter[it].orEmpty(), Sort.AtoZ)) }
     }
 
+    /** Style tags offered in the tag editor, from the README scheme. */
+    val styleTags = listOf("Quick", "Slow cooker", "Grill", "One pot", "Make ahead", "Weeknight", "Freezer friendly")
+
+    /** What the tag editor shows as picked: one chapter, protein(s), and every other tag. */
+    data class TagSelection(val chapter: String?, val proteins: Set<String>, val tags: Set<String>)
+
+    fun selectionOf(r: RecipeEntity): TagSelection {
+        val proteinAliases = proteins.flatMap { it.second }.toSet()
+        return TagSelection(
+            chapter = if (names(r.categories).isEmpty()) null else chapterOf(r),
+            proteins = proteinsOf(r),
+            tags = names(r.tags).filter { it.lowercase() !in proteinAliases }.toSet(),
+        )
+    }
+
+    /** Category names to save: the chapter, by its standard name. */
+    fun categoriesFor(sel: TagSelection): List<String> = listOfNotNull(sel.chapter)
+
+    /** Tag names to save: proteins in chip order, then the rest A to Z. */
+    fun tagsFor(sel: TagSelection): List<String> =
+        proteins.map { it.first }.filter { it in sel.proteins } + sel.tags.sortedBy { it.lowercase() }
+
+    /** Chapters to offer: the standard ones, then custom categories already in the library. */
+    fun chapterChoices(library: List<RecipeEntity>): List<String> {
+        val standard = chapters.map { it.first }
+        val custom = library.map(::chapterOf).filter { it !in standard && it != UNFILED }.distinct().sortedBy { it.lowercase() }
+        return standard + custom
+    }
+
+    /** Other tags to offer: the style tags, then any tag already used in the library. */
+    fun tagChoices(library: List<RecipeEntity>): List<String> {
+        val proteinAliases = proteins.flatMap { it.second }.toSet()
+        val seen = mutableSetOf<String>()
+        return (styleTags + library.flatMap { names(it.tags) }.sortedBy { it.lowercase() })
+            .filter { it.lowercase() !in proteinAliases && seen.add(it.lowercase()) }
+    }
+
     /** Total time in minutes from Mealie's text ("1 hour 10 minutes", "PT45M"), if it can be read. */
     fun minutes(totalTime: String?): Long? {
         if (totalTime.isNullOrBlank()) return null

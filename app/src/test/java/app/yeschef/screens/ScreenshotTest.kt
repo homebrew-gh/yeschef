@@ -45,6 +45,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import app.yeschef.data.ThemeMode
 import app.yeschef.ui.settings.ThemePicker
 import androidx.compose.foundation.layout.padding
+import app.yeschef.data.Cookbook
+import app.yeschef.ui.recipes.TagEditorContent
 import org.junit.Rule
 import org.junit.Test
 import java.time.LocalDate
@@ -119,6 +121,22 @@ class ScreenshotTest {
 
     @Test fun mealPlan() = phone(tab = 2) {
         MealPlanContent(Sample.mealPlan, Sample.today, null, {}, actions = { SyncIcon() })
+    }
+
+    @Test fun tagEditor() {
+        paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_6.copy(screenHeight = 2800))
+        paparazzi.snapshot {
+            YesChefTheme {
+                Box(Modifier.background(MaterialTheme.colorScheme.surfaceContainerLow).padding(top = 16.dp)) {
+                    TagEditorContent(
+                        selection = Cookbook.TagSelection("Mains", setOf("Beef"), setOf("Make ahead", "Sunday dinner")),
+                        chapters = Cookbook.chapterChoices(Sample.recipes),
+                        tags = Cookbook.tagChoices(Sample.recipes),
+                        onChange = {}, onSave = {}, onCancel = {},
+                    )
+                }
+            }
+        }
     }
 
     @Test fun themePicker() = paparazzi.snapshot {
@@ -211,6 +229,8 @@ private fun Detail(cookMode: Boolean, withBack: Boolean = true, servings: Double
     onToggleCookMode = {},
     onBack = if (withBack) ({}) else null,
     lastCooked = "Cooked 7 weeks ago",
+    tagLine = listOf("Mains", "Beef", "Make ahead"),
+    onEditTags = {},
     initialServings = servings,
     onCustomTimer = {},
     onStartTimer = { _, _ -> },

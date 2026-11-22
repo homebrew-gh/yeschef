@@ -9,6 +9,7 @@ import app.yeschef.data.local.YesChefDb
 import app.yeschef.data.remote.LastMadeBody
 import kotlinx.serialization.json.JsonPrimitive
 import app.yeschef.data.remote.MealieApi
+import app.yeschef.data.remote.OrganizerDto
 import app.yeschef.data.remote.MealieJson
 import app.yeschef.data.remote.NewShoppingItem
 import app.yeschef.data.remote.RecipeDetailDto
@@ -20,6 +21,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
@@ -137,6 +139,38 @@ class Repository(
         sync()
     }
 
+    /**
+     * Sets a recipe's categories (its chapter) and tags by name. Shown at once and
+     * sent with the next sync; names Mealie doesn't have yet are created then.
+     */
+    suspend fun setOrganizers(slug: String, categories: List<String>, tags: List<String>) {
+        db.recipes().setOrganizers(slug, categories.joinToString("\n"), tags.joinToString("\n"))
+        val payload = OrganizerChange(categories, tags)
+        db.shopping().enqueue(
+            PendingOpEntity(kind = PendingOpEntity.SET_ORGANIZERS, itemId = slug, listId = MealieJson.encodeToString(payload)),
+        )
+    }
+
+    private suspend fun pushOrganizers(api: MealieApi, slug: String, json: String) {
+        val change = MealieJson.decodeFromString<OrganizerChange>(json)
+        suspend fun resolve(
+            names: List<String>,
+            existing: suspend () -> List<OrganizerDto>,
+            create: suspend (JsonObject) -> OrganizerDto,
+        ): JsonArray {
+            val known = if (names.isEmpty()) emptyMap() else existing().associateBy { it.name.lowercase() }
+            return JsonArray(
+                names.map { name ->
+                    val o = known[name.lowercase()] ?: create(JsonObject(mapOf("name" to JsonPrimitive(name))))
+                    JsonObject(mapOf("id" to JsonPrimitive(o.id), "name" to JsonPrimitive(o.name), "slug" to JsonPrimitive(o.slug)))
+                },
+            )
+        }
+        val categories = resolve(change.c, { api.categories().items }, { api.createCategory(it) })
+        val tags = resolve(change.t, { api.tags().items }, { api.createTag(it) })
+        api.patchRecipe(slug, JsonObject(mapOf("recipeCategory" to categories, "tags" to tags)))
+    }
+
     /** Marks a recipe as cooked now. Shown at once; sent to Mealie with the next sync. */
     suspend fun markCooked(slug: String) {
         val now = java.time.OffsetDateTime.now().toString()
@@ -196,6 +230,7 @@ class Repository(
                 when {
                     op.kind == PendingOpEntity.LAST_MADE -> api.setLastMade(op.itemId, LastMadeBody(op.listId))
                     op.kind == PendingOpEntity.DELETE_ITEM -> api.deleteShoppingItem(op.itemId)
+                    op.kind == PendingOpEntity.SET_ORGANIZERS -> pushOrganizers(api, op.itemId, op.listId)
                     item == null -> Unit
                     op.kind == PendingOpEntity.CREATE -> {
                         api.createShoppingItem(
@@ -290,3 +325,7 @@ class Repository(
         )
     }
 }
+
+/** A queued category/tag change, by name. Short keys keep the queue row small. */
+@kotlinx.serialization.Serializable
+private data class OrganizerChange(val c: List<String>, val t: List<String>)

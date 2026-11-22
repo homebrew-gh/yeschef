@@ -3,6 +3,10 @@ package app.yeschef.ui.recipes
 import android.net.Uri
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material.icons.automirrored.filled.Label
 import app.yeschef.data.cook.formatAmount
 import app.yeschef.data.cook.baseServings
 import app.yeschef.data.cook.scaleIngredient
@@ -105,6 +109,7 @@ import app.yeschef.ui.cook.CustomTimerDialog
 import app.yeschef.ui.cook.TimerChip
 import app.yeschef.ui.cook.rememberTimerStarter
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecipeDetailScreen(container: AppContainer, slug: String, onBack: (() -> Unit)?) {
     val repo = container.repository
@@ -180,6 +185,30 @@ fun RecipeDetailScreen(container: AppContainer, slug: String, onBack: (() -> Uni
         )
     }
 
+    // Chapter and tags editor, in a bottom sheet.
+    var editingTags by rememberSaveable { mutableStateOf(false) }
+    val library by remember { repo.recipes() }.collectAsStateWithLifecycle(emptyList())
+    if (editingTags && entity != null) {
+        var selection by remember(entity.id) { mutableStateOf(Cookbook.selectionOf(entity)) }
+        ModalBottomSheet(onDismissRequest = { editingTags = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+            TagEditorContent(
+                selection = selection,
+                chapters = remember(library) { Cookbook.chapterChoices(library) },
+                tags = remember(library) { Cookbook.tagChoices(library) },
+                onChange = { selection = it },
+                onCancel = { editingTags = false },
+                onSave = {
+                    editingTags = false
+                    scope.launch {
+                        repo.setOrganizers(slug, Cookbook.categoriesFor(selection), Cookbook.tagsFor(selection))
+                        SyncScheduler.requestSync(context)
+                        snackbar.showSnackbar("Tags saved")
+                    }
+                },
+            )
+        }
+    }
+
     RecipeDetailContent(
         title = recipeName,
         detail = detail,
@@ -190,6 +219,8 @@ fun RecipeDetailScreen(container: AppContainer, slug: String, onBack: (() -> Uni
             if (cookMode && detail != null) askCooked = true
             cookMode = !cookMode
         },
+        tagLine = entity?.let { Cookbook.names(it.categories) + Cookbook.names(it.tags) }.orEmpty(),
+        onEditTags = if (entity != null) ({ editingTags = true }) else null,
         lastCooked = Cookbook.lastCookedText(entity?.lastMade ?: detail?.lastMade, LocalDate.now()),
         onBack = onBack,
         onCustomTimer = { showCustomTimer = true },
@@ -222,6 +253,8 @@ fun RecipeDetailContent(
     onToggleCookMode: () -> Unit,
     onBack: (() -> Unit)?,
     lastCooked: String? = null,
+    tagLine: List<String> = emptyList(),
+    onEditTags: (() -> Unit)? = null,
     initialServings: Double? = null,
     onCustomTimer: () -> Unit,
     onStartTimer: (label: String, seconds: Long) -> Unit,
@@ -249,6 +282,9 @@ fun RecipeDetailContent(
                     if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                 },
                 actions = {
+                    if (onEditTags != null && !cookMode) {
+                        IconButton(onClick = onEditTags) { Icon(Icons.AutoMirrored.Filled.Label, "Edit chapter and tags") }
+                    }
                     IconButton(onClick = onCustomTimer) { Icon(Icons.Filled.Timer, "New timer") }
                     FilterChip(
                         selected = cookMode,
@@ -306,6 +342,15 @@ fun RecipeDetailContent(
                 item {
                     Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
                         Text(detail.name, style = MaterialTheme.typography.headlineMedium)
+                        if (tagLine.isNotEmpty()) {
+                            Spacer(Modifier.size(6.dp))
+                            Text(
+                                tagLine.joinToString("  ·  "),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = colors.tertiary,
+                                modifier = if (onEditTags != null) Modifier.clip(MaterialTheme.shapes.small).clickable(onClick = onEditTags) else Modifier,
+                            )
+                        }
                         detail.description?.takeIf { it.isNotBlank() }?.let {
                             Spacer(Modifier.size(8.dp))
                             Text(it, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
