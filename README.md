@@ -42,6 +42,40 @@ to the foreground, about every 30 minutes, and right after each edit (WorkManage
 backoff while the server is unreachable). Local edits that haven't been sent are never overwritten
 by server data.
 
+## Installing and updating
+
+Every push to `main` builds a signed APK and publishes it as a GitHub Release
+(`build-N`). On the phone or tablet, open the repo's **Releases** page, download the newest
+`yeschef-0.2.N.apk` and install it; it updates the app in place, keeping your data.
+
+All builds are signed with one key, stored only in repository secrets, and the version code
+rises with every build, so Android accepts each new APK as an update.
+
+### One-time signing key setup
+
+Run on any computer with a JDK (`keytool` also ships with Android Studio):
+
+```sh
+keytool -genkeypair -v -keystore yeschef.jks -storetype PKCS12 -alias yeschef \
+  -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=YesChef"
+# choose a strong password when asked
+
+base64 -w0 yeschef.jks > yeschef.jks.b64    # macOS: base64 -i yeschef.jks -o yeschef.jks.b64
+```
+
+Then in GitHub: **Settings > Secrets and variables > Actions > New repository secret**, add:
+
+| Secret | Value |
+|---|---|
+| `YESCHEF_KEYSTORE_BASE64` | contents of `yeschef.jks.b64` |
+| `YESCHEF_KEYSTORE_PASSWORD` | the password you chose |
+| `YESCHEF_KEY_ALIAS` | `yeschef` |
+| `YESCHEF_KEY_PASSWORD` | the same password (PKCS12 uses one password) |
+
+Keep `yeschef.jks` and its password somewhere safe (a password manager), then delete the
+`.b64` file. If the key is ever lost, the next build can't update the app and you'd have to
+uninstall once. Without the secrets, CI still builds but signs with a throwaway key.
+
 ## Connecting to Start9 over WireGuard
 
 1. Connect the WireGuard VPN on the device.
