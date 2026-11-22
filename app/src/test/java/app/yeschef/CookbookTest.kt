@@ -66,4 +66,20 @@ class CookbookTest {
         assertEquals("Cooked Jun 2025", Cookbook.lastCookedText("2025-06-01T10:00:00Z", today))
         assertNull(Cookbook.lastCookedText(null, today))
     }
+
+    @Test fun tagEditorRoundTrip() {
+        val sel = Cookbook.selectionOf(box[0]) // Roast chicken: "Main course", tags Chicken + Sunday
+        assertEquals(Cookbook.TagSelection("Mains", setOf("Chicken"), setOf("Sunday")), sel)
+        val edited = sel.copy(chapter = "Sides", proteins = setOf("Vegetarian", "Chicken"), tags = setOf("Quick", "Sunday"))
+        assertEquals(listOf("Sides"), Cookbook.categoriesFor(edited))
+        assertEquals(listOf("Chicken", "Vegetarian", "Quick", "Sunday"), Cookbook.tagsFor(edited))
+        assertEquals(Cookbook.TagSelection(null, emptySet(), emptySet()), Cookbook.selectionOf(box[5]))
+    }
+
+    @Test fun tagEditorChoices() {
+        assertEquals("Preserves", Cookbook.chapterChoices(box).last())
+        val tags = Cookbook.tagChoices(box)
+        assertEquals(Cookbook.styleTags, tags.take(Cookbook.styleTags.size))
+        assertEquals(listOf("Sunday"), tags.drop(Cookbook.styleTags.size)) // "Quick" not repeated, proteins left out
+    }
 }
