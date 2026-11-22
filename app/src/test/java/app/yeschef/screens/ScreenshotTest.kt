@@ -152,6 +152,8 @@ private fun Detail(cookMode: Boolean, withBack: Boolean = true) = RecipeDetailCo
     onBack = if (withBack) ({}) else null,
     onCustomTimer = {},
     onStartTimer = { _, _ -> },
+    onTakePhoto = {},
+    onPickPhoto = {},
 )
 
 private object Sample {

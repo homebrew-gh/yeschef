@@ -1,5 +1,24 @@
 package app.yeschef.ui.recipes
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import app.yeschef.ui.ImageVersions
+import kotlinx.coroutines.launch
+import retrofit2.HttpException
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -96,6 +115,31 @@ fun RecipeDetailScreen(container: AppContainer, slug: String, onBack: (() -> Uni
         )
     }
 
+    // Recipe photo: take one with the camera or pick one, shrink it, upload it to Mealie.
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val snackbar = remember { SnackbarHostState() }
+    var uploading by remember { mutableStateOf(false) }
+    var cameraUri by rememberSaveable { mutableStateOf<Uri?>(null) }
+    fun upload(uri: Uri) {
+        scope.launch {
+            uploading = true
+            val result = runCatching {
+                val version = repo.uploadRecipeImage(slug, preparePhoto(context, uri))
+                entity?.id?.let { ImageVersions.bump(it, version) }
+            }
+            uploading = false
+            snackbar.showSnackbar(result.fold({ "Photo saved to Mealie" }, ::photoError))
+        }
+    }
+    val takePhoto = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
+        val uri = cameraUri
+        if (saved && uri != null) upload(uri)
+    }
+    val pickPhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) upload(uri)
+    }
+
     RecipeDetailContent(
         title = recipeName,
         detail = detail,
@@ -106,7 +150,21 @@ fun RecipeDetailScreen(container: AppContainer, slug: String, onBack: (() -> Uni
         onBack = onBack,
         onCustomTimer = { showCustomTimer = true },
         onStartTimer = { stepNumber, seconds -> startTimer("$recipeName · step $stepNumber", seconds, slug) },
+        photoUploading = uploading,
+        onTakePhoto = {
+            val uri = newCameraUri(context)
+            cameraUri = uri
+            takePhoto.launch(uri)
+        },
+        onPickPhoto = { pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+        snackbarHostState = snackbar,
     )
+}
+
+private fun photoError(e: Throwable): String = when (e) {
+    is HttpException -> if (e.code() == 400) "Mealie couldn't read that image." else "Mealie returned HTTP ${e.code()}."
+    is java.io.IOException -> "Couldn't reach Mealie. Connect the VPN and try again."
+    else -> "Couldn't use that photo (${e.message ?: e.javaClass.simpleName})."
 }
 
 /** Stateless recipe page, also used for screenshots. */
@@ -121,6 +179,10 @@ fun RecipeDetailContent(
     onBack: (() -> Unit)?,
     onCustomTimer: () -> Unit,
     onStartTimer: (stepNumber: Int, seconds: Long) -> Unit,
+    photoUploading: Boolean = false,
+    onTakePhoto: (() -> Unit)? = null,
+    onPickPhoto: (() -> Unit)? = null,
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
     val colors = MaterialTheme.colorScheme
     val wide = isWide()
@@ -155,6 +217,7 @@ fun RecipeDetailContent(
             )
         },
         containerColor = colors.background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         if (detail == null) {
             Text(notLoadedMessage, Modifier.padding(padding).padding(24.dp), style = MaterialTheme.typography.bodyLarge)
@@ -163,12 +226,26 @@ fun RecipeDetailContent(
         LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = 32.dp)) {
             if (!cookMode) {
                 item {
-                    RecipeImage(
-                        serverUrl, detail.id,
+                    Box(
                         Modifier.padding(horizontal = 16.dp).fillMaxWidth()
                             .then(if (wide) Modifier.height(300.dp) else Modifier.aspectRatio(16f / 10f))
                             .clip(MaterialTheme.shapes.extraLarge),
-                    )
+                    ) {
+                        RecipeImage(serverUrl, detail.id, Modifier.fillMaxSize())
+                        if (photoUploading) {
+                            Box(Modifier.fillMaxSize().background(colors.scrim.copy(alpha = 0.35f)), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(color = Color.White)
+                            }
+                        }
+                        if (onTakePhoto != null && onPickPhoto != null && !photoUploading) {
+                            PhotoButton(
+                                hasPhoto = !detail.image.isNullOrBlank(),
+                                onTakePhoto = onTakePhoto,
+                                onPickPhoto = onPickPhoto,
+                                modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp),
+                            )
+                        }
+                    }
                 }
                 item {
                     Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
@@ -252,6 +329,37 @@ fun RecipeDetailContent(
                     Text("Source: $url", Modifier.padding(20.dp), style = MaterialTheme.typography.labelMedium, color = colors.outline)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun PhotoButton(hasPhoto: Boolean, onTakePhoto: () -> Unit, onPickPhoto: () -> Unit, modifier: Modifier = Modifier) {
+    var open by remember { mutableStateOf(false) }
+    Box(modifier) {
+        FilledTonalButton(
+            onClick = { open = true },
+            shape = CircleShape,
+            colors = ButtonDefaults.filledTonalButtonColors(
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                contentColor = MaterialTheme.colorScheme.primary,
+            ),
+        ) {
+            Icon(Icons.Filled.PhotoCamera, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(if (hasPhoto) "Change photo" else "Add photo")
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(
+                text = { Text("Take photo") },
+                leadingIcon = { Icon(Icons.Filled.PhotoCamera, contentDescription = null) },
+                onClick = { open = false; onTakePhoto() },
+            )
+            DropdownMenuItem(
+                text = { Text("Choose from gallery") },
+                leadingIcon = { Icon(Icons.Filled.PhotoLibrary, contentDescription = null) },
+                onClick = { open = false; onPickPhoto() },
+            )
         }
     }
 }

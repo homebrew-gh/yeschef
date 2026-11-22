@@ -22,6 +22,9 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.encodeToString
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import retrofit2.HttpException
 import java.io.IOException
 import java.time.LocalDate
@@ -116,6 +119,20 @@ class Repository(
     suspend fun refreshRecipe(slug: String) {
         val api = apiProvider() ?: return
         runCatching { cacheDetail(api, slug) }
+    }
+
+    /**
+     * Uploads a new photo (JPEG bytes) for a recipe. Needs the server, so it is not
+     * queued offline. Returns the new image version for cache-busting.
+     */
+    suspend fun uploadRecipeImage(slug: String, jpeg: ByteArray): String {
+        val api = apiProvider() ?: throw IOException("Not connected to a server")
+        val part = MultipartBody.Part.createFormData(
+            "image", "photo.jpg", jpeg.toRequestBody("image/jpeg".toMediaType()),
+        )
+        val response = api.uploadRecipeImage(slug, part, "jpg".toRequestBody("text/plain".toMediaType()))
+        runCatching { cacheDetail(api, slug) }
+        return response.image ?: System.currentTimeMillis().toString()
     }
 
     private suspend fun cacheDetail(api: MealieApi, slug: String) {

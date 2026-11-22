@@ -24,8 +24,8 @@ fun apiBaseUrl(serverUrl: String): String {
 /** The server root without /api, for media URLs. */
 fun serverRoot(serverUrl: String): String = apiBaseUrl(serverUrl).removeSuffix("api/").trimEnd('/')
 
-fun recipeImageUrl(serverUrl: String, recipeId: String, size: String = "min-original"): String =
-    "${serverRoot(serverUrl)}/api/media/recipes/$recipeId/images/$size.webp"
+fun recipeImageUrl(serverUrl: String, recipeId: String, size: String = "min-original", version: String? = null): String =
+    "${serverRoot(serverUrl)}/api/media/recipes/$recipeId/images/$size.webp" + (version?.let { "?v=$it" } ?: "")
 
 object ApiFactory {
     fun httpClient(tokenProvider: () -> String?): OkHttpClient =
