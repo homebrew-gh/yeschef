@@ -165,3 +165,6 @@ data class MealPlanEntryDto(
     val recipeId: String? = null,
     val recipe: RecipeSummaryDto? = null,
 )
+
+@Serializable
+data class UpdateImageResponse(val image: String? = null)

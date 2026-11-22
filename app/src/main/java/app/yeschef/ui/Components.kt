@@ -48,7 +48,7 @@ fun RecipeImage(serverUrl: String?, recipeId: String, modifier: Modifier = Modif
         )
         if (serverUrl != null) {
             AsyncImage(
-                model = recipeImageUrl(serverUrl, recipeId, size),
+                model = recipeImageUrl(serverUrl, recipeId, size, ImageVersions[recipeId]),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
