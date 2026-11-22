@@ -7,6 +7,16 @@ plugins {
     alias(libs.plugins.paparazzi)
 }
 
+// Every build is signed with one stable key so a new APK installs over the old one.
+// CI passes the key in through environment variables (from GitHub secrets); locally
+// you can export the same variables. Without them the build falls back to the
+// per-machine debug key, which is fine for trying things out but can't update an
+// installed copy signed with the real key.
+val keystoreFile = System.getenv("YESCHEF_KEYSTORE")?.let(::file)?.takeIf { it.exists() }
+
+// Each CI run gets a higher version code, which Android needs to accept an update.
+val buildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0
+
 android {
     namespace = "app.yeschef"
     compileSdk = 35
@@ -16,14 +26,26 @@ android {
         // Pixel phones and the Pixel Tablet all run recent Android.
         minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 100 + buildNumber
+        versionName = "0.2.$buildNumber"
+    }
+
+    signingConfigs {
+        if (keystoreFile != null) {
+            create("yeschef") {
+                storeFile = keystoreFile
+                storePassword = System.getenv("YESCHEF_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("YESCHEF_KEY_ALIAS")
+                keyPassword = System.getenv("YESCHEF_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.findByName("yeschef") ?: signingConfigs.getByName("debug")
         }
     }
     compileOptions {
@@ -71,4 +93,10 @@ dependencies {
     implementation(libs.coil.compose)
 
     testImplementation(libs.junit)
+}
+
+// Debug and release KSP both write Room's schema JSON to the same folder.
+// Running them at the same time can leave an empty file and fail the build.
+tasks.matching { it.name == "kspReleaseKotlin" }.configureEach {
+    mustRunAfter("kspDebugKotlin")
 }
