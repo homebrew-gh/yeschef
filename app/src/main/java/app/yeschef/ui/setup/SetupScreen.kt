@@ -199,7 +199,7 @@ fun SetupForm(
     }
 }
 
-private fun describe(e: Exception): String = when (e) {
+internal fun describe(e: Exception): String = when (e) {
     is SSLException ->
         "The server's certificate isn't trusted. Install your StartOS Root CA on this device " +
             "(Settings > Security & privacy > More security settings > Encryption & credentials > Install a certificate > CA certificate)."

@@ -42,6 +42,9 @@ import app.yeschef.ui.setup.SetupForm
 import app.yeschef.ui.shopping.ShoppingContent
 import app.yeschef.ui.theme.YesChefTheme
 import kotlinx.serialization.json.JsonPrimitive
+import app.yeschef.data.ThemeMode
+import app.yeschef.ui.settings.ThemePicker
+import androidx.compose.foundation.layout.padding
 import org.junit.Rule
 import org.junit.Test
 import java.time.LocalDate
@@ -110,6 +113,14 @@ class ScreenshotTest {
 
     @Test fun mealPlan() = phone(tab = 2) {
         MealPlanContent(Sample.mealPlan, Sample.today, null, {}, actions = { SyncIcon() })
+    }
+
+    @Test fun themePicker() = paparazzi.snapshot {
+        YesChefTheme {
+            Box(Modifier.background(MaterialTheme.colorScheme.background).padding(16.dp)) {
+                ThemePicker(ThemeMode.System) {}
+            }
+        }
     }
 
     @Test fun setup() = paparazzi.snapshot {

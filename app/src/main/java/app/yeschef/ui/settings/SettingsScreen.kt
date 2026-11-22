@@ -1,6 +1,27 @@
 package app.yeschef.ui.settings
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BrightnessAuto
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import app.yeschef.data.ServerConfig
+import app.yeschef.data.ThemeMode
+import app.yeschef.ui.setup.describe
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxSize
@@ -39,12 +60,23 @@ fun SettingsScreen(container: AppContainer) {
     val pending by remember { container.repository.pendingCount() }.collectAsStateWithLifecycle(0)
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val theme by container.themeMode.collectAsStateWithLifecycle()
+    var editServer by rememberSaveable { mutableStateOf(false) }
+    if (editServer) {
+        config?.let { current -> ServerDialog(container, current) { editServer = false } }
+    }
 
     Scaffold(topBar = { YcTopBar("Settings") }, containerColor = MaterialTheme.colorScheme.background) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
             SectionLabel("Server")
             Card {
                 Text(config?.serverUrl ?: "Not connected", style = MaterialTheme.typography.titleMedium)
+                OutlinedButton(onClick = { editServer = true }, shape = CircleShape) { Text("Change server or token") }
+            }
+
+            SectionLabel("Appearance")
+            Card {
+                ThemePicker(theme) { mode -> scope.launch { container.setTheme(mode) } }
             }
 
             SectionLabel("Sync")
@@ -87,6 +119,86 @@ fun SettingsScreen(container: AppContainer) {
             ) { Text("Sign out and clear local data") }
         }
     }
+}
+
+/** Light / Dark / System, as one segmented control. */
+@Composable
+fun ThemePicker(mode: ThemeMode, onPick: (ThemeMode) -> Unit) {
+    val options = listOf(
+        Triple(ThemeMode.Light, "Light", Icons.Filled.LightMode),
+        Triple(ThemeMode.Dark, "Dark", Icons.Filled.DarkMode),
+        Triple(ThemeMode.System, "System", Icons.Filled.BrightnessAuto),
+    )
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+        options.forEachIndexed { i, (value, label, icon) ->
+            SegmentedButton(
+                selected = mode == value,
+                onClick = { onPick(value) },
+                shape = SegmentedButtonDefaults.itemShape(i, options.size),
+                icon = { SegmentedButtonDefaults.Icon(mode == value) { Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp)) } },
+                label = { Text(label) },
+            )
+        }
+    }
+}
+
+/**
+ * Change the server address and/or API token. The new details are tried against
+ * Mealie before they're saved, so a typo can't lock the app out of a working server.
+ */
+@Composable
+private fun ServerDialog(container: AppContainer, current: ServerConfig, onDone: () -> Unit) {
+    var server by rememberSaveable { mutableStateOf(current.serverUrl) }
+    var token by rememberSaveable { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDone() },
+        title = { Text("Change server") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = server, onValueChange = { server = it; error = null },
+                    label = { Text("Mealie address") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = token, onValueChange = { token = it; error = null },
+                    label = { Text("New API token (optional)") },
+                    placeholder = { Text("Leave blank to keep the current one") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !busy && server.isNotBlank(),
+                onClick = {
+                    busy = true
+                    scope.launch {
+                        try {
+                            val newConfig = ServerConfig(server.trim(), token.trim().ifEmpty { current.token })
+                            container.probeApi(newConfig.serverUrl, newConfig.token).self() // proves it works
+                            container.saveConfig(newConfig)
+                            SyncScheduler.requestSync(context)
+                            onDone()
+                        } catch (e: Exception) {
+                            error = describe(e)
+                        } finally {
+                            busy = false
+                        }
+                    }
+                },
+            ) { Text(if (busy) "Checking…" else "Test and save") }
+        },
+        dismissButton = { TextButton(enabled = !busy, onClick = onDone) { Text("Cancel") } },
+    )
 }
 
 @Composable

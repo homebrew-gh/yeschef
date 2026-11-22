@@ -9,6 +9,9 @@ import kotlinx.coroutines.flow.map
 
 data class ServerConfig(val serverUrl: String, val token: String)
 
+/** Light, dark, or follow the phone's setting. */
+enum class ThemeMode { System, Light, Dark }
+
 private val Context.dataStore by preferencesDataStore(name = "settings")
 
 /**
@@ -18,6 +21,15 @@ private val Context.dataStore by preferencesDataStore(name = "settings")
 class SettingsStore(private val context: Context) {
     private val serverKey = stringPreferencesKey("server_url")
     private val tokenKey = stringPreferencesKey("api_token")
+    private val themeKey = stringPreferencesKey("theme")
+
+    val themeMode: Flow<ThemeMode> = context.dataStore.data.map { prefs ->
+        ThemeMode.entries.firstOrNull { it.name == prefs[themeKey] } ?: ThemeMode.System
+    }
+
+    suspend fun saveTheme(mode: ThemeMode) {
+        context.dataStore.edit { it[themeKey] = mode.name }
+    }
 
     val config: Flow<ServerConfig?> = context.dataStore.data.map { prefs ->
         val url = prefs[serverKey]
@@ -32,7 +44,11 @@ class SettingsStore(private val context: Context) {
         }
     }
 
+    /** Forgets the server and token. The theme choice stays. */
     suspend fun clear() {
-        context.dataStore.edit { it.clear() }
+        context.dataStore.edit {
+            it.remove(serverKey)
+            it.remove(tokenKey)
+        }
     }
 }
