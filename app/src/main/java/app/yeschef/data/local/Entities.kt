@@ -80,5 +80,7 @@ data class PendingOpEntity(
         const val CREATE = "create"
         /** Mark a recipe cooked: itemId is the slug, listId holds the ISO timestamp. */
         const val LAST_MADE = "last_made"
+        /** Delete a shopping item on the server; the local row is already gone. */
+        const val DELETE_ITEM = "delete_item"
     }
 }

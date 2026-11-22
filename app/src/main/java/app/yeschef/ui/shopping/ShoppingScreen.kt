@@ -57,6 +57,18 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.RemoveShoppingCart
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -93,6 +105,19 @@ fun ShoppingScreen(container: AppContainer) {
     val syncState by repo.syncState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val snackbar = remember { SnackbarHostState() }
+    // Creating, renaming and deleting lists needs Mealie, so these run now or report why not.
+    fun listAction(failure: String, block: suspend () -> Unit) {
+        scope.launch {
+            try {
+                block()
+            } catch (e: Exception) {
+                snackbar.showSnackbar(
+                    if (e is java.io.IOException || e is IllegalStateException) "$failure. Connect the VPN and try again." else "$failure (${e.message})",
+                )
+            }
+        }
+    }
 
     val items by remember(selected?.id) { selected?.let { repo.shoppingItems(it.id) } ?: kotlinx.coroutines.flow.flowOf(emptyList()) }
         .collectAsStateWithLifecycle(emptyList())
@@ -136,6 +161,33 @@ fun ShoppingScreen(container: AppContainer) {
             }
         },
         actions = { SyncAction(container) },
+        onClearChecked = {
+            selected?.let { list ->
+                scope.launch {
+                    repo.clearChecked(list.id)
+                    SyncScheduler.requestSync(context)
+                }
+            }
+        },
+        onUncheckAll = {
+            selected?.let { list ->
+                scope.launch {
+                    repo.uncheckAll(list.id)
+                    SyncScheduler.requestSync(context)
+                }
+            }
+        },
+        onNewList = { name -> listAction("Couldn't create the list") { repo.createList(name) } },
+        onRenameList = { name -> selected?.let { list -> listAction("Couldn't rename the list") { repo.renameList(list.id, name) } } },
+        onDeleteList = {
+            selected?.let { list ->
+                listAction("Couldn't delete the list") {
+                    repo.deleteList(list.id)
+                    selectedId = null
+                }
+            }
+        },
+        snackbarHostState = snackbar,
     )
 }
 
@@ -156,6 +208,13 @@ fun ShoppingContent(
     onToggle: (ShoppingRow) -> Unit,
     onAdd: (String) -> Unit,
     actions: @Composable () -> Unit,
+    onClearChecked: () -> Unit = {},
+    onUncheckAll: () -> Unit = {},
+    onNewList: (String) -> Unit = {},
+    onRenameList: (String) -> Unit = {},
+    onDeleteList: () -> Unit = {},
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
+    initialShowChecked: Boolean = false,
 ) {
     var recipeFilter by rememberSaveable { mutableStateOf<String?>(null) }
     val colorSlots = remember(recipeNames) { assignRecipeColors(recipeNames, RecipeTagColors.size) }
@@ -164,15 +223,36 @@ fun ShoppingContent(
         if (recipeFilter == null) rows else rows.filter { recipeFilter in it.recipeIds }
     }
     val (sections, checked) = remember(visible, labelOrder) { groupForShopping(visible, labelOrder) }
-    var showChecked by rememberSaveable { mutableStateOf(false) }
+    var showChecked by rememberSaveable { mutableStateOf(initialShowChecked) }
+    var dialog by rememberSaveable { mutableStateOf<String?>(null) } // "new", "rename", "delete", "clear"
+    when (dialog) {
+        "new" -> NameDialog("New list", "", "Create", onDismiss = { dialog = null }) { onNewList(it); dialog = null }
+        "rename" -> NameDialog("Rename list", title, "Rename", onDismiss = { dialog = null }) { onRenameList(it); dialog = null }
+        "delete" -> ConfirmDialog(
+            "Delete \"$title\"?",
+            "The list and everything on it will be removed from Mealie.",
+            "Delete",
+            onDismiss = { dialog = null },
+        ) { onDeleteList(); dialog = null }
+        "clear" -> ConfirmDialog(
+            "Clear the cart?",
+            "Removes the ${checked.size} ticked item${if (checked.size == 1) "" else "s"} from this list.",
+            "Clear",
+            onDismiss = { dialog = null },
+        ) { onClearChecked(); dialog = null }
+    }
 
     Scaffold(
         topBar = {
             YcTopBar(title = "", actions = { actions() }, navigationIcon = {
-                ListPicker(lists, title, onPickList)
+                ListPicker(
+                    lists, title, hasList, onPickList,
+                    onNew = { dialog = "new" }, onRename = { dialog = "rename" }, onDelete = { dialog = "delete" },
+                )
             })
         },
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         PullToRefreshBox(isRefreshing = refreshing, onRefresh = onRefresh, modifier = Modifier.padding(padding).fillMaxSize()) {
             if (!hasList) {
@@ -221,6 +301,25 @@ fun ShoppingContent(
                                         Column { checked.forEach { ItemRow(it, recipeNames, recipeColor, onToggle) } }
                                     }
                                 }
+                                Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.End) {
+                                    TextButton(onClick = onUncheckAll) {
+                                        Icon(Icons.Filled.RestartAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("Uncheck all")
+                                    }
+                                    Spacer(Modifier.width(8.dp))
+                                    FilledTonalButton(
+                                        onClick = { dialog = "clear" },
+                                        colors = ButtonDefaults.filledTonalButtonColors(
+                                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                        ),
+                                    ) {
+                                        Icon(Icons.Filled.RemoveShoppingCart, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("Clear cart")
+                                    }
+                                }
                             }
                         }
                     }
@@ -232,20 +331,81 @@ fun ShoppingContent(
 }
 
 @Composable
-private fun ListPicker(lists: List<Pair<String, String>>, title: String, onPick: (String) -> Unit) {
+private fun ListPicker(
+    lists: List<Pair<String, String>>,
+    title: String,
+    hasList: Boolean,
+    onPick: (String) -> Unit,
+    onNew: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
+) {
     var open by remember { mutableStateOf(false) }
     Box(Modifier.padding(start = 8.dp)) {
         Row(
-            Modifier.clip(MaterialTheme.shapes.small).clickable(enabled = lists.size > 1) { open = true }.padding(horizontal = 8.dp, vertical = 4.dp),
+            Modifier.clip(MaterialTheme.shapes.small).clickable { open = true }.padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (lists.size > 1) Icon(Icons.Filled.ArrowDropDown, contentDescription = "Choose list")
+            Icon(Icons.Filled.ArrowDropDown, contentDescription = "Lists")
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            lists.forEach { (id, name) -> DropdownMenuItem(text = { Text(name) }, onClick = { onPick(id); open = false }) }
+            lists.forEach { (id, name) ->
+                DropdownMenuItem(
+                    text = { Text(name, fontWeight = if (name == title) FontWeight.SemiBold else null) },
+                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = null) },
+                    onClick = { onPick(id); open = false },
+                )
+            }
+            if (lists.isNotEmpty()) HorizontalDivider()
+            DropdownMenuItem(
+                text = { Text("New list") },
+                leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                onClick = { open = false; onNew() },
+            )
+            if (hasList) {
+                DropdownMenuItem(
+                    text = { Text("Rename \"$title\"") },
+                    leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
+                    onClick = { open = false; onRename() },
+                )
+                DropdownMenuItem(
+                    text = { Text("Delete \"$title\"") },
+                    leadingIcon = { Icon(Icons.Filled.DeleteOutline, contentDescription = null) },
+                    onClick = { open = false; onDelete() },
+                )
+            }
         }
     }
+}
+
+@Composable
+private fun NameDialog(heading: String, initial: String, confirm: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    var name by rememberSaveable { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(heading) },
+        text = {
+            OutlinedTextField(
+                value = name, onValueChange = { name = it }, singleLine = true,
+                label = { Text("Name") }, placeholder = { Text("Costco, Weekly staples…") },
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+            )
+        },
+        confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = { onConfirm(name.trim()) }) { Text(confirm) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun ConfirmDialog(heading: String, body: String, confirm: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(heading) },
+        text = { Text(body) },
+        confirmButton = { TextButton(onClick = onConfirm) { Text(confirm) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable

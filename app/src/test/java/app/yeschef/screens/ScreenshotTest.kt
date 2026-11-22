@@ -61,6 +61,12 @@ class ScreenshotTest {
 
     @Test fun shoppingDark() = phone(tab = 0, dark = true) { Shopping() }
 
+    /** Scrolled to the bottom: the opened cart with Uncheck all and Clear cart. */
+    @Test fun shoppingCart() {
+        paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_6.copy(screenHeight = 4200))
+        phone(tab = 0) { Shopping(showChecked = true) }
+    }
+
     @Test fun shoppingWithTimers() = phone(tab = 0) {
         Column {
             Box(Modifier.weight(1f)) { Shopping() }
@@ -174,7 +180,7 @@ private fun SyncIcon() {
 }
 
 @Composable
-private fun Shopping() = ShoppingContent(
+private fun Shopping(showChecked: Boolean = false) = ShoppingContent(
     title = "Weekly groceries",
     lists = listOf("1" to "Weekly groceries", "2" to "Costco"),
     onPickList = {},
@@ -188,6 +194,7 @@ private fun Shopping() = ShoppingContent(
     onToggle = {},
     onAdd = {},
     actions = { SyncIcon() },
+    initialShowChecked = showChecked,
 )
 
 @Composable
@@ -225,6 +232,7 @@ private object Sample {
         row("2", "3 ripe bananas", "Produce", false, "r-bread"),
         row("3", "1 bunch cilantro", "Produce", false, "r-tacos"),
         row("4", "2 limes", "Produce", true, "r-tacos"),
+        row("4b", "Paper towels", null, true),
         row("5", "16 oz ricotta", "Dairy", false, "r-lasagna"),
         row("6", "2 cups shredded mozzarella", "Dairy", false, "r-lasagna", "r-tacos"),
         row("7", "Butter", "Dairy", true, "r-bread"),
