@@ -73,6 +73,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Scale
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material3.FilterChip
@@ -115,6 +116,8 @@ import app.yeschef.ui.SectionLabel
 import app.yeschef.ui.YcTopBar
 import app.yeschef.ui.isWide
 import app.yeschef.ui.cook.CustomTimerDialog
+import app.yeschef.ui.cook.UnitConverterSheet
+import app.yeschef.ui.cook.rememberUnitConverterState
 import app.yeschef.ui.cook.TimerChip
 import app.yeschef.ui.cook.rememberTimerStarter
 
@@ -308,6 +311,9 @@ fun RecipeDetailScreen(
         }
     }
 
+    val converter = rememberUnitConverterState()
+    UnitConverterSheet(converter)
+
     RecipeDetailContent(
         title = recipeName,
         onEdit = if (detail != null) ({ draft = RecipeDraft.of(detail) }) else null,
@@ -327,6 +333,7 @@ fun RecipeDetailScreen(
         onBack = onBack,
         onCustomTimer = { showCustomTimer = true },
         onStartTimer = { label, seconds -> startTimer(label, seconds, slug, recipeName) },
+        onConvertUnits = { converter.open = true },
         photoUploading = uploading,
         onTakePhoto = {
             val uri = newCameraUri(context)
@@ -364,6 +371,7 @@ fun RecipeDetailContent(
     initialServings: Double? = null,
     onCustomTimer: () -> Unit,
     onStartTimer: (label: String, seconds: Long) -> Unit,
+    onConvertUnits: (() -> Unit)? = null,
     photoUploading: Boolean = false,
     onTakePhoto: (() -> Unit)? = null,
     onPickPhoto: (() -> Unit)? = null,
@@ -393,6 +401,9 @@ fun RecipeDetailContent(
                     }
                     if (onEditTags != null && !cookMode) {
                         IconButton(onClick = onEditTags) { Icon(Icons.AutoMirrored.Filled.Label, "Edit chapter and tags") }
+                    }
+                    if (onConvertUnits != null) {
+                        IconButton(onClick = onConvertUnits) { Icon(Icons.Filled.Scale, "Unit converter") }
                     }
                     IconButton(onClick = onCustomTimer) { Icon(Icons.Filled.Timer, "New timer") }
                     FilterChip(

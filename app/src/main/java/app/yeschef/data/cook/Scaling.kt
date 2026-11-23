@@ -52,7 +52,8 @@ private const val NUM = """(?:\d+(?:[.,]\d+)?(?:\s+\d+/\d+|\s*[½¼¾⅓⅔⅛�
 /** An amount at the very start, optionally a range: "2", "1 1/2", "1½", "2-3", "2 to 3". */
 private val LEADING = Regex("""^\s*($NUM)(?:(\s*(?:-|–|to)\s*)($NUM))?(?![\d/.]|\s*[x×]\s*\d)""")
 
-private fun parseAmount(s: String): Double? {
+/** "1 1/2", "1½", "0.5" or "2,5" to a number; null if it isn't one. */
+fun parseAmount(s: String): Double? {
     val t = s.trim().replace(',', '.')
     var total = 0.0
     val parts = Regex("""(\d+(?:\.\d+)?)?\s*(?:(\d+)/(\d+)|([½¼¾⅓⅔⅛⅜⅝⅞]))?""").matchEntire(t) ?: return null

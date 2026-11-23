@@ -29,12 +29,15 @@ import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
 import app.yeschef.data.ShoppingRow
 import app.yeschef.data.cook.CookTimer
+import app.yeschef.data.cook.Densities
+import app.yeschef.data.cook.KitchenUnit
 import app.yeschef.data.local.MealPlanEntity
 import app.yeschef.data.local.RecipeEntity
 import app.yeschef.data.remote.IngredientDto
 import app.yeschef.data.remote.RecipeDetailDto
 import app.yeschef.data.remote.StepDto
 import app.yeschef.ui.cook.TimerTrayContent
+import app.yeschef.ui.cook.UnitConverterContent
 import app.yeschef.ui.mealplan.AddToPlanContent
 import app.yeschef.ui.mealplan.MealPlanContent
 import app.yeschef.ui.mealplan.MoveMealContent
@@ -198,6 +201,17 @@ class ScreenshotTest {
         paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_6.copy(screenHeight = 2600))
         sheet {
             AddToPlanContent(Sample.recipes, Sample.today, Sample.today.plusDays(2), { _, _, _ -> }, {}, initialPicked = listOf("miso-glazed-salmon", "herb-rice-pilaf"))
+        }
+    }
+
+    /** Cook mode's unit converter: 2 cups of flour in every other unit. */
+    @Test fun unitConverter() {
+        paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_6.copy(screenHeight = 2600))
+        sheet {
+            UnitConverterContent(
+                amount = "2", onAmount = {}, from = KitchenUnit.CUP, onFrom = {},
+                density = Densities.first { it.name == "All-purpose flour" }, onDensity = {},
+            )
         }
     }
 

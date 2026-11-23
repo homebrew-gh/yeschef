@@ -36,6 +36,8 @@ your own Mealie server.
   quickest or "not made in a while", or let the dice pick something.
 - **Cook mode.** Large text, screen stays awake, and each step shows the ingredients it needs
   ("You'll need"). When you finish, YesChef offers to mark the recipe as cooked.
+- **Unit converter.** The scale button in a recipe, cook mode and whole-meal cook mode opens a
+  converter over the page: cups, spoons, fl oz, pints, quarts, gallons, ml, l, g, kg, oz and lb.
 - **Timers.** Times in the steps ("bake 25 minutes", "10-12 min") become chips you tap to start a
   timer, labelled with the step and recipe. Run several at once from the tray or the notification.
   A finished timer rings with your alarm sound, even when the app is closed.
@@ -152,6 +154,10 @@ table above into your assistant's instructions and give it access to Mealie's AP
 ## Scaling and nutrition
 
 The **Serves** control next to Ingredients scales every amount, including the "You'll need" boxes in cook mode. It changes the number at the start of each ingredient line ("1 1/2 lb" becomes "2¼ lb"), so ingredients Mealie hasn't parsed scale too. Lines with no amount, like "salt to taste", are left as they are. Recipes without a serving count get a ×½ to ×4 multiplier instead. **Nutrition** shows Mealie's per-serving values in a small section that expands when tapped.
+
+## Unit converter
+
+The scale button at the top of a recipe (also in cook mode) and of whole-meal cook mode opens the converter in a sheet, so you don't lose your place. Type an amount, pick its unit, and it shows that amount in every other unit. Volumes are US measures (1 cup = 236.6 ml, 16 tbsp). Weight and volume only convert into each other once you pick an ingredient, because a cup of flour (125 g) weighs far less than a cup of sugar (200 g). The built-in list covers common ingredients (water, milk, oil, butter, honey, flours, sugars, cocoa, cornstarch, rice, oats, table salt) at typical weights for a level cup, so treat those as good to a few percent. Everything works offline. The list is in `data/cook/UnitConversion.kt` if you want to add an ingredient.
 
 ## How sync works
 
