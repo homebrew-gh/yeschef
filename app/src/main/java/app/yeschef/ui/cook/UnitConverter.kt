@@ -13,21 +13,13 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.listSaver
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -42,39 +34,6 @@ import app.yeschef.data.cook.formatConverted
 import app.yeschef.data.cook.parseAmount
 import app.yeschef.ui.SectionLabel
 
-/** What the converter shows. It lives with the screen, so reopening the sheet keeps the last conversion. */
-class UnitConverterState(open: Boolean, amount: String, from: KitchenUnit, density: String?) {
-    var open by mutableStateOf(open)
-    var amount by mutableStateOf(amount)
-    var from by mutableStateOf(from)
-    var density by mutableStateOf(density)
-
-    companion object {
-        val Saver = listSaver<UnitConverterState, Any?>(
-            save = { listOf(it.open, it.amount, it.from.name, it.density) },
-            restore = { UnitConverterState(it[0] as Boolean, it[1] as String, KitchenUnit.valueOf(it[2] as String), it[3] as String?) },
-        )
-    }
-}
-
-@Composable
-fun rememberUnitConverterState(): UnitConverterState =
-    rememberSaveable(saver = UnitConverterState.Saver) { UnitConverterState(false, "1", KitchenUnit.CUP, null) }
-
-/** The converter in a bottom sheet over whatever is on screen, so cook mode stays put. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun UnitConverterSheet(state: UnitConverterState) {
-    if (!state.open) return
-    ModalBottomSheet(onDismissRequest = { state.open = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        UnitConverterContent(
-            amount = state.amount, onAmount = { state.amount = it },
-            from = state.from, onFrom = { state.from = it },
-            density = Densities.firstOrNull { it.name == state.density }, onDensity = { state.density = it?.name },
-        )
-    }
-}
-
 /** Stateless converter: an amount and unit in, that amount in every other unit out. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -88,12 +47,11 @@ fun UnitConverterContent(
 ) {
     val value = parseAmount(amount)
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 16.dp)) {
-        Text("Unit converter", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(horizontal = 20.dp))
         Text(
             "US cups and spoons. Pick an ingredient to go between weight and volume.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 12.dp),
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 12.dp),
         )
         OutlinedTextField(
             value = amount,
@@ -144,7 +102,7 @@ private fun UnitChips(units: List<KitchenUnit>, selected: KitchenUnit, onSelect:
 }
 
 @Composable
-private fun Chip(label: String, selected: Boolean, tertiary: Boolean = false, onClick: () -> Unit) {
+internal fun Chip(label: String, selected: Boolean, tertiary: Boolean = false, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     FilterChip(
         selected = selected,
