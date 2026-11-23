@@ -32,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Scale
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -221,6 +222,9 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
         )
     }
 
+    val converter = rememberUnitConverterState()
+    UnitConverterSheet(converter)
+
     val startTimer = rememberTimerStarter(container.timers)
     BackHandler(onBack = onClose)
     CookMealContent(
@@ -240,6 +244,7 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
         onFinish = { askEnd = true },
         onBack = onClose,
         onStartTimer = { recipe, label, seconds -> startTimer(label, seconds, recipe.slug, recipe.name) },
+        onConvertUnits = { converter.open = true },
     )
 }
 
@@ -262,6 +267,7 @@ fun CookMealContent(
     onFinish: () -> Unit,
     onBack: () -> Unit,
     onStartTimer: (MealRecipeView, String, Long) -> Unit,
+    onConvertUnits: (() -> Unit)? = null,
     zone: ZoneId = ZoneId.systemDefault(),
 ) {
     val colors = MaterialTheme.colorScheme
@@ -279,6 +285,9 @@ fun CookMealContent(
                 title = title,
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
                 actions = {
+                    if (onConvertUnits != null) {
+                        IconButton(onClick = onConvertUnits) { Icon(Icons.Filled.Scale, "Unit converter") }
+                    }
                     FilterChip(
                         selected = keepScreenOn,
                         onClick = onToggleScreen,
