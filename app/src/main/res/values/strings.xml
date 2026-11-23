@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">YesChef</string>
+    <string name="share_add_recipe">Add to YesChef</string>
 </resources>
