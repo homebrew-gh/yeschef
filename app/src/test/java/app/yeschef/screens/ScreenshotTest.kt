@@ -376,6 +376,7 @@ private fun Detail(cookMode: Boolean, withBack: Boolean = true, servings: Double
     onEditTags = {},
     onEdit = {},
     onAddToList = {},
+    onShare = { _, _ -> },
     onCookWithSides = {},
     initialServings = servings,
     onCustomTimer = {},
