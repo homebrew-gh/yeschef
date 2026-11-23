@@ -16,6 +16,7 @@ import app.yeschef.data.remote.RecipeDetailDto
 import app.yeschef.data.remote.ShoppingItemDto
 import app.yeschef.data.remote.ParseIngredientsBody
 import app.yeschef.data.cook.scaleIngredient
+import app.yeschef.data.cook.CookNotes
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -297,6 +298,17 @@ class Repository(
         add.local.forEach { db.shopping().deleteItem(it) }
     }
 
+    /**
+     * Saves cook-mode notes to the recipe's timeline in Mealie as one "Cook notes" entry.
+     * Queued like other edits, so it works offline and goes with the next sync.
+     */
+    suspend fun saveCookNotes(recipeId: String, message: String) {
+        val note = TimelineNote(java.time.OffsetDateTime.now().toString(), message)
+        db.shopping().enqueue(
+            PendingOpEntity(kind = PendingOpEntity.COOK_NOTES, itemId = recipeId, listId = MealieJson.encodeToString(note)),
+        )
+    }
+
     /** Marks a recipe as cooked now. Shown at once; sent to Mealie with the next sync. */
     suspend fun markCooked(slug: String) {
         val now = java.time.OffsetDateTime.now().toString()
@@ -432,6 +444,7 @@ class Repository(
             try {
                 when {
                     op.kind == PendingOpEntity.LAST_MADE -> api.setLastMade(op.itemId, LastMadeBody(op.listId))
+                    op.kind == PendingOpEntity.COOK_NOTES -> pushCookNotes(api, op.itemId, op.listId)
                     op.kind == PendingOpEntity.DELETE_ITEM -> api.deleteShoppingItem(op.itemId)
                     op.kind == PendingOpEntity.SET_ORGANIZERS -> pushOrganizers(api, op.itemId, op.listId)
                     op.kind == PendingOpEntity.SAVE_RECIPE -> pushRecipe(api, op.listId)
@@ -460,6 +473,21 @@ class Repository(
             dao.deleteOp(op.opId)
             if (item != null && dao.pendingCountFor(item.id) == 0) dao.clearPending(item.id)
         }
+    }
+
+    private suspend fun pushCookNotes(api: MealieApi, recipeId: String, payload: String) {
+        val note = MealieJson.decodeFromString<TimelineNote>(payload)
+        api.createTimelineEvent(
+            JsonObject(
+                mapOf(
+                    "recipeId" to JsonPrimitive(recipeId),
+                    "subject" to JsonPrimitive(CookNotes.SUBJECT),
+                    "eventType" to JsonPrimitive("comment"),
+                    "eventMessage" to JsonPrimitive(note.message),
+                    "timestamp" to JsonPrimitive(note.timestamp),
+                ),
+            ),
+        )
     }
 
     /** Undoes what a dropped edit showed locally, so the app matches Mealie again. */
@@ -563,3 +591,7 @@ private data class MealMove(val d: String, val t: String)
 /** A queued category/tag change, by name. Short keys keep the queue row small. */
 @kotlinx.serialization.Serializable
 private data class OrganizerChange(val c: List<String>, val t: List<String>)
+
+/** Queued cook notes: when they were saved and the timeline message. */
+@kotlinx.serialization.Serializable
+private data class TimelineNote(val timestamp: String, val message: String)

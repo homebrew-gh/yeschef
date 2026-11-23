@@ -6,6 +6,9 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import app.yeschef.data.cook.CookNote
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
 
 data class ServerConfig(val serverUrl: String, val token: String)
 
@@ -40,6 +43,24 @@ class SettingsStore(private val context: Context) {
     suspend fun saveShoppingDayAddTo(id: String) {
         context.dataStore.edit { it[dayAddToKey] = id }
     }
+
+    /** Cook-mode notes not yet saved to Mealie, per recipe id. Kept across app restarts. */
+    fun cookNotes(recipeId: String): Flow<List<CookNote>> = context.dataStore.data.map { prefs ->
+        prefs[cookNotesKey(recipeId)]?.let { runCatching { Json.decodeFromString(noteList, it) }.getOrNull() }.orEmpty()
+    }
+
+    /** Changes a recipe's unsaved cook notes in one step, so quick notes in a row all keep. */
+    suspend fun updateCookNotes(recipeId: String, change: (List<CookNote>) -> List<CookNote>) {
+        val key = cookNotesKey(recipeId)
+        context.dataStore.edit { prefs ->
+            val now = prefs[key]?.let { runCatching { Json.decodeFromString(noteList, it) }.getOrNull() }.orEmpty()
+            val next = change(now)
+            if (next.isEmpty()) prefs.remove(key) else prefs[key] = Json.encodeToString(noteList, next)
+        }
+    }
+
+    private fun cookNotesKey(recipeId: String) = stringPreferencesKey("cook_notes_$recipeId")
+    private val noteList = ListSerializer(CookNote.serializer())
 
     val themeMode: Flow<ThemeMode> = context.dataStore.data.map { prefs ->
         ThemeMode.entries.firstOrNull { it.name == prefs[themeKey] } ?: ThemeMode.System
