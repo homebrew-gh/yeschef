@@ -22,6 +22,24 @@ class SettingsStore(private val context: Context) {
     private val serverKey = stringPreferencesKey("server_url")
     private val tokenKey = stringPreferencesKey("api_token")
     private val themeKey = stringPreferencesKey("theme")
+    private val dayListsKey = stringPreferencesKey("shopping_day_lists")
+    private val dayAddToKey = stringPreferencesKey("shopping_day_add_to")
+
+    /** The lists picked for Shopping Day, as Mealie list ids. Empty until picked. */
+    val shoppingDayLists: Flow<List<String>> = context.dataStore.data.map { prefs ->
+        prefs[dayListsKey]?.let(::parseRecipeIds).orEmpty()
+    }
+
+    /** The list that Shopping Day's add bar adds to, last picked. */
+    val shoppingDayAddTo: Flow<String?> = context.dataStore.data.map { it[dayAddToKey] }
+
+    suspend fun saveShoppingDayLists(ids: List<String>) {
+        context.dataStore.edit { it[dayListsKey] = ids.joinToString(",") }
+    }
+
+    suspend fun saveShoppingDayAddTo(id: String) {
+        context.dataStore.edit { it[dayAddToKey] = id }
+    }
 
     val themeMode: Flow<ThemeMode> = context.dataStore.data.map { prefs ->
         ThemeMode.entries.firstOrNull { it.name == prefs[themeKey] } ?: ThemeMode.System
