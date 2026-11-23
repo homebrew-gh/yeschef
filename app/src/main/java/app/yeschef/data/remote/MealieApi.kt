@@ -1,5 +1,6 @@
 package app.yeschef.data.remote
 
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
@@ -41,6 +42,30 @@ interface MealieApi {
 
     @GET("recipes/{slug}")
     suspend fun recipe(@Path("slug") slug: String): RecipeDetailDto
+
+    /** The recipe exactly as Mealie returns it (by slug or id), so an edit can keep what it doesn't touch. */
+    @GET("recipes/{slugOrId}")
+    suspend fun recipeRaw(@Path("slugOrId") slugOrId: String): JsonObject
+
+    /** Partial recipe update by slug or id; returns the saved recipe (its slug follows its name). */
+    @PATCH("recipes/{slugOrId}")
+    suspend fun patchRecipeJson(@Path("slugOrId") slugOrId: String, @Body body: JsonObject): JsonObject
+
+    /** Mealie's ingredient parser: quantity, unit, food and note from each line of text. */
+    @POST("parser/ingredients")
+    suspend fun parseIngredients(@Body body: ParseIngredientsBody): List<JsonObject>
+
+    @GET("foods")
+    suspend fun foods(@Query("perPage") perPage: Int = -1): Page<JsonObject>
+
+    @POST("foods")
+    suspend fun createFood(@Body body: JsonObject): JsonObject
+
+    @GET("units")
+    suspend fun units(@Query("perPage") perPage: Int = -1): Page<JsonObject>
+
+    @POST("units")
+    suspend fun createUnit(@Body body: JsonObject): JsonObject
 
     @GET("organizers/categories")
     suspend fun categories(@Query("perPage") perPage: Int = -1): Page<OrganizerDto>
@@ -84,7 +109,11 @@ interface MealieApi {
     suspend fun deleteShoppingItem(@Path("id") id: String): ResponseBody
 
     @POST("households/shopping/lists")
-    suspend fun createShoppingList(@Body body: JsonObject): ResponseBody
+    suspend fun createShoppingList(@Body body: JsonObject): JsonObject
+
+    /** Adds recipes' ingredients to a list, scaled, merging with what's there. */
+    @POST("households/shopping/lists/{id}/recipe")
+    suspend fun addRecipesToList(@Path("id") listId: String, @Body body: JsonArray): ResponseBody
 
     /** The list exactly as Mealie returns it, so a rename can send it back whole. */
     @GET("households/shopping/lists/{id}")

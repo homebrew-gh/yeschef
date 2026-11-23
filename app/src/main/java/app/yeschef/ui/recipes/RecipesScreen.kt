@@ -80,7 +80,7 @@ fun RecipesScreen(container: AppContainer, openSlug: String?, onOpen: (String?) 
     // A recipe opens full screen with a back arrow, on the tablet as well as the phone.
     if (openSlug != null) {
         BackHandler { onOpen(null) }
-        RecipeDetailScreen(container, openSlug, onBack = { onOpen(null) }, onCookMeal = onCookMeal)
+        RecipeDetailScreen(container, openSlug, onBack = { onOpen(null) }, onCookMeal = onCookMeal, onSlugChanged = { onOpen(it) })
     } else {
         list(Modifier.fillMaxSize())
     }

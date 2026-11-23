@@ -37,6 +37,12 @@ your own Mealie server.
 - **Servings scaler.** Scales every amount, including ones Mealie hasn't parsed.
 - **Nutrition.** Mealie's per-serving values, in a section that expands when tapped.
 - **Recipe photos.** Take one with the camera or pick one from the gallery.
+- **Edit recipes by hand.** Change the name, description, servings, prep/cook/total times,
+  ingredients (add, remove, reorder, one per line, amount first) and steps. Works offline; Mealie
+  re-reads new and changed ingredient lines when the edit syncs, so they still scale and go on the
+  shopping list properly. Leave a time blank if you don't know it; cook time 0 means no cooking.
+- **Add any recipe to any grocery list.** Pick the list (or make a new one), choose the servings and
+  untick what you already have. Works offline; Mealie scales and merges the lines on the next sync.
 - **Meal plan.** The next three weeks; planned recipes are downloaded ahead so they open offline.
 - **Phone and tablet.** On a tablet the recipe opens beside the list.
 - **Light, dark or system theme.**

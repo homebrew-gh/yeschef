@@ -31,6 +31,16 @@ abstract class RecipeDao {
     @Query("UPDATE recipes SET categories = :categories, tags = :tags WHERE slug = :slug")
     abstract suspend fun setOrganizers(slug: String, categories: String, tags: String)
 
+    @Query("SELECT * FROM recipes WHERE id = :id")
+    abstract suspend fun byId(id: String): RecipeEntity?
+
+    @Query("UPDATE recipes SET name = :name, description = :description, totalTime = :totalTime, recipeYield = :recipeYield WHERE slug = :slug")
+    abstract suspend fun setSummary(slug: String, name: String, description: String?, totalTime: String?, recipeYield: String?)
+
+    /** After a rename on the server: Mealie's slug follows the name. */
+    @Query("UPDATE recipes SET slug = :slug, detailJson = :json WHERE id = :id")
+    abstract suspend fun setSlugAndDetail(id: String, slug: String, json: String)
+
     @Query("UPDATE recipes SET lastMade = :iso WHERE slug = :slug")
     abstract suspend fun setLastMade(slug: String, iso: String)
 
@@ -96,6 +106,9 @@ abstract class ShoppingDao {
     @Query("SELECT * FROM pending_ops ORDER BY opId")
     abstract suspend fun pendingOps(): List<PendingOpEntity>
 
+    @Query("SELECT * FROM pending_ops ORDER BY opId LIMIT 1")
+    abstract suspend fun firstPendingOp(): PendingOpEntity?
+
     @Query("SELECT COUNT(*) FROM pending_ops")
     abstract fun observePendingCount(): Flow<Int>
 
@@ -107,6 +120,13 @@ abstract class ShoppingDao {
 
     @Query("SELECT COUNT(*) FROM pending_ops WHERE itemId = :itemId")
     abstract suspend fun pendingCountFor(itemId: String): Int
+
+    @Query("SELECT COUNT(*) FROM pending_ops WHERE itemId = :itemId AND kind = :kind")
+    abstract suspend fun pendingKindCount(itemId: String, kind: String): Int
+
+    /** Queued edits that name a recipe by slug follow it when Mealie renames it. */
+    @Query("UPDATE pending_ops SET itemId = :newSlug WHERE itemId = :oldSlug AND kind IN ('last_made', 'set_organizers')")
+    abstract suspend fun renameRecipeOps(oldSlug: String, newSlug: String)
 
     @Insert
     abstract suspend fun enqueue(op: PendingOpEntity)

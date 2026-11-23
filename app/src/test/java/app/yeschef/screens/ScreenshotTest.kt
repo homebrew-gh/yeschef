@@ -50,6 +50,9 @@ import app.yeschef.ui.settings.ThemePicker
 import androidx.compose.foundation.layout.padding
 import app.yeschef.data.Cookbook
 import app.yeschef.ui.recipes.TagEditorContent
+import app.yeschef.ui.recipes.RecipeEditorContent
+import app.yeschef.ui.recipes.AddToListContent
+import app.yeschef.data.RecipeDraft
 import app.yeschef.data.cook.buildMealTimeline
 import app.yeschef.ui.cook.CookMealContent
 import app.yeschef.ui.cook.MealRecipeView
@@ -116,6 +119,43 @@ class ScreenshotTest {
     @Test fun recipeScaled() {
         paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_6.copy(screenHeight = 3600))
         phone(tab = 1) { Detail(cookMode = false, servings = 12.0) }
+    }
+
+    /** The recipe editor, scrolled out in full: times, ingredient lines and steps. */
+    @Test fun recipeEditor() {
+        paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_6.copy(screenHeight = 4400))
+        paparazzi.snapshot {
+            YesChefTheme {
+                RecipeEditorContent(
+                    draft = RecipeDraft.of(Sample.lasagna),
+                    onChange = {}, onSave = {}, onCancel = {},
+                )
+            }
+        }
+    }
+
+    /** Add to grocery list: pick the list and servings, untick what you have. */
+    @Test fun addToList() {
+        paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_6.copy(screenHeight = 3000))
+        paparazzi.snapshot {
+            YesChefTheme {
+                Box(Modifier.background(MaterialTheme.colorScheme.surfaceContainerLow).padding(top = 16.dp)) {
+                    val lines = Sample.lasagna.recipeIngredient.withIndex()
+                        .filterNot { app.yeschef.data.isHeadingOnly(it.value) }
+                        .map { it.index to app.yeschef.data.ingredientLineText(it.value) }
+                    AddToListContent(
+                        recipeName = Sample.lasagna.name,
+                        lines = lines,
+                        baseServings = app.yeschef.data.cook.baseServings(Sample.lasagna.recipeServings, Sample.lasagna.recipeYield),
+                        lists = listOf("1" to "Weekly groceries", "2" to "Costco", "3" to "Weekly meals"),
+                        initialListId = "2",
+                        initialServings = 12.0,
+                        initialSkip = setOf(lines[1].first, lines.last().first),
+                        onAdd = { _, _, _ -> }, onCreateList = { null }, onCancel = {},
+                    )
+                }
+            }
+        }
     }
 
     @Test fun tabletCookMode() {
@@ -312,6 +352,9 @@ private fun Detail(cookMode: Boolean, withBack: Boolean = true, servings: Double
     lastCooked = "Cooked 7 weeks ago",
     tagLine = listOf("Mains", "Beef", "Make ahead"),
     onEditTags = {},
+    onEdit = {},
+    onAddToList = {},
+    onCookWithSides = {},
     initialServings = servings,
     onCustomTimer = {},
     onStartTimer = { _, _ -> },
