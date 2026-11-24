@@ -193,7 +193,7 @@ private fun DrawScope.wokToss(t: Float, p: IntroPalette, u: Float) {
     val phase = (t * 2f) % 1f
     val air = sin(phase * PI.toFloat()) // 0, up to 1, back to 0
     val tilt = -9f * sin(phase * 2f * PI.toFloat())
-    flames(t, p, u, 92f)
+    flames(t, p, u, 84f)
     rotate(tilt, pivot = o(50f, 60f, u)) {
         translate(top = -4f * air * u) {
             // Handle, behind the bowl.
