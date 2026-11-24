@@ -68,7 +68,7 @@ your own Mealie server.
 - **Share or print any recipe.** The **Share or print** button under a recipe's times sends it as text (messages, email,
   notes) or as a PDF, or opens Android's print dialog (which can also save a PDF). Amounts match the
   servings you've picked.
-- **Meal plan.** The next three weeks; planned recipes are downloaded ahead so they open offline.
+- **Meal plan.** The next three weeks; planned recipes are downloaded ahead so they open offline. "Past week" at the top opens the last seven days, so a meal that didn't get made can be opened or moved to today ("Make it today").
 - **Phone and tablet.** On a tablet the recipe opens beside the list.
 - **Light, dark or system theme.**
 

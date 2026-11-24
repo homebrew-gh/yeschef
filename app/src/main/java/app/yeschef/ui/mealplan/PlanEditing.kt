@@ -45,12 +45,14 @@ fun planDays(today: LocalDate, count: Int = 14): List<LocalDate> = (0 until coun
 fun planDayLabel(date: LocalDate, today: LocalDate): String = when (date) {
     today -> "Today"
     today.plusDays(1) -> "Tomorrow"
+    today.minusDays(1) -> "Yesterday"
     else -> date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault()) + " " + date.dayOfMonth
 }
 
 fun planDayLongLabel(date: LocalDate, today: LocalDate): String = when (date) {
     today -> "today"
     today.plusDays(1) -> "tomorrow"
+    today.minusDays(1) -> "yesterday"
     else -> date.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.getDefault()) + ", " + date.format(DateTimeFormatter.ofPattern("MMM d"))
 }
 
@@ -104,8 +106,10 @@ fun MoveMealContent(
     onMove: (LocalDate, String) -> Unit,
     onRemove: () -> Unit,
     onCancel: () -> Unit,
+    /** Where the day chips start: a past meal opened with "Make it today" starts on today. */
+    initialDate: LocalDate = date,
 ) {
-    var toDate by rememberSaveable { mutableStateOf(date.toString()) }
+    var toDate by rememberSaveable { mutableStateOf(initialDate.toString()) }
     var toType by rememberSaveable { mutableStateOf(entryType) }
     val target = LocalDate.parse(toDate)
     val changed = target != date || toType != entryType
