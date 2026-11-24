@@ -125,14 +125,15 @@ fun CookIntroOverlay(onDone: () -> Unit) {
     if (reduceMotion) return
 
     Dialog(onDismissRequest = { done() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        // Our own scrim, so it fades with the card instead of vanishing at the end.
+        // Our own backdrop: a plain screen in the app's background colour, so the recipe
+        // doesn't show through. It fades with the card to reveal cook mode at the end.
         val window = (LocalView.current.parent as? DialogWindowProvider)?.window
         SideEffect { window?.setDimAmount(0f) }
         Box(
             Modifier
                 .fillMaxSize()
                 .graphicsLayer { alpha = veil.value }
-                .background(Color.Black.copy(alpha = 0.45f))
+                .background(MaterialTheme.colorScheme.background)
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { done() },
             contentAlignment = Alignment.Center,
         ) {

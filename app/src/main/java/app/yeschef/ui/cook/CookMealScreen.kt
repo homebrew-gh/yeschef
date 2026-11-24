@@ -74,6 +74,7 @@ import app.yeschef.data.cook.MealSession
 import app.yeschef.data.cook.MealStepIn
 import app.yeschef.data.cook.MealTimeline
 import app.yeschef.data.cook.buildMealTimeline
+import app.yeschef.data.cook.firstSteps
 import app.yeschef.data.cook.formatShort
 import app.yeschef.data.cook.planReminders
 import app.yeschef.data.cook.timerStepLabel
@@ -82,7 +83,7 @@ import app.yeschef.data.sync.SyncScheduler
 import app.yeschef.ui.SectionLabel
 import app.yeschef.ui.YcTopBar
 import app.yeschef.ui.recipes.StepIngredients
-import app.yeschef.ui.recipes.ingredientText
+import app.yeschef.ui.recipes.stepIngredientRows
 import app.yeschef.ui.recipes.stepIngredientsFor
 import app.yeschef.ui.recipes.stepTimers
 import app.yeschef.ui.theme.OverlineStyle
@@ -455,7 +456,9 @@ private fun StepCard(recipe: MealRecipeView, stepIndex: Int, onStartTimer: (Meal
     val colors = MaterialTheme.colorScheme
     val detail = recipe.detail ?: return
     val step = detail.recipeInstructions.getOrNull(stepIndex) ?: return
-    val used = remember(detail) { stepIngredientsFor(detail) }.getOrNull(stepIndex).orEmpty()
+    val perStep = remember(detail) { stepIngredientsFor(detail) }
+    val firstUse = remember(perStep) { firstSteps(perStep) }
+    val used = perStep.getOrNull(stepIndex).orEmpty()
     var checked by remember(detail.id) { mutableStateOf(setOf<Int>()) }
     Surface(shape = MaterialTheme.shapes.large, color = colors.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.height(IntrinsicSize.Min)) {
@@ -472,7 +475,7 @@ private fun StepCard(recipe: MealRecipeView, stepIndex: Int, onStartTimer: (Meal
                 Text(step.text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 4.dp))
                 if (used.isNotEmpty()) {
                     StepIngredients(
-                        lines = used.map { i -> i to ingredientText(detail.recipeIngredient[i]) },
+                        lines = stepIngredientRows(detail, used, stepIndex, firstUse),
                         checked = checked,
                         onToggle = { i -> checked = if (i in checked) checked - i else checked + i },
                     )
