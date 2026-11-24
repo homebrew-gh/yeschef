@@ -289,8 +289,8 @@ fun CookMealContent(
     var open by rememberSaveable { mutableStateOf(openDishes.toList()) }
     var checked by remember { mutableStateOf(mapOf<String, Set<Int>>()) }
     fun toggle(slug: String, i: Int) {
-        val now = checked[slug].orEmpty()
-        checked = checked + (slug to if (i in now) now - i else now + i)
+        val ticked = checked[slug].orEmpty()
+        checked = checked + (slug to if (i in ticked) ticked - i else ticked + i)
     }
     // Merged steps, bucketed by the minute they start.
     val slots = remember(timeline, readyAt) {
