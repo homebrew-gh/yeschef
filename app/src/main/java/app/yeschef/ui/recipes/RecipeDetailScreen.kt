@@ -47,6 +47,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -86,12 +87,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Scale
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -207,27 +206,6 @@ fun RecipeDetailScreen(
         if (uri != null) upload(uri)
     }
 
-    // Leaving cook mode asks whether to log the recipe as cooked (Mealie's "last made").
-    var askCooked by rememberSaveable { mutableStateOf(false) }
-    if (askCooked) {
-        AlertDialog(
-            onDismissRequest = { askCooked = false },
-            title = { Text("Mark as cooked?") },
-            text = { Text("Save today as the last time you made $recipeName.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    askCooked = false
-                    scope.launch {
-                        repo.markCooked(slug)
-                        SyncScheduler.requestSync(context)
-                        snackbar.showSnackbar("Marked as cooked today")
-                    }
-                }) { Text("Yes, I made it") }
-            },
-            dismissButton = { TextButton(onClick = { askCooked = false }) { Text("Not now") } },
-        )
-    }
-
     // Cooking notes: the mic button in cook mode takes a spoken note, tagged with the step
     // on screen. They stay on the phone until reviewed on leaving cook mode, then go to the
     // recipe's timeline in Mealie for an assistant to read.
@@ -314,6 +292,17 @@ fun RecipeDetailScreen(
             )
         }
     }
+
+    // Leaving cook mode without "Done cooking" doesn't log the recipe as cooked, but
+    // notes taken along the way are still offered for review.
+    fun leaveCookMode() {
+        cookMode = false
+        if (cookNotes.isNotEmpty()) {
+            markCookedToo = false
+            reviewingNotes = true
+        }
+    }
+    BackHandler(enabled = cookMode) { leaveCookMode() }
 
     // Chapter and tags editor, in a bottom sheet.
     var editingTags by rememberSaveable { mutableStateOf(false) }
@@ -440,17 +429,28 @@ fun RecipeDetailScreen(
         notLoadedMessage = if (entity == null) "Recipe not found." else "This recipe hasn't been downloaded yet. Connect the VPN to load it.",
         serverUrl = config?.serverUrl,
         cookMode = cookMode,
-        onToggleCookMode = {
-            if (cookMode && detail != null) {
-                if (cookNotes.isNotEmpty()) reviewingNotes = true else askCooked = true
+        onStartCooking = {
+            cookMode = true
+            cookIntro = true
+        },
+        onFinishCooking = {
+            cookMode = false
+            if (cookNotes.isNotEmpty()) {
+                markCookedToo = true
+                reviewingNotes = true
+            } else {
+                scope.launch {
+                    repo.markCooked(slug)
+                    SyncScheduler.requestSync(context)
+                    snackbar.showSnackbar("Marked as cooked today")
+                }
             }
-            cookMode = !cookMode
-            if (cookMode) cookIntro = true
         },
         tagLine = entity?.let { Cookbook.names(it.categories) + Cookbook.names(it.tags) }.orEmpty(),
         onEditTags = if (entity != null) ({ editingTags = true }) else null,
         lastCooked = Cookbook.lastCookedText(entity?.lastMade ?: detail?.lastMade, LocalDate.now()),
-        onBack = onBack,
+        // In cook mode, back leaves cook mode and stays on the recipe.
+        onBack = if (cookMode) ({ leaveCookMode() }) else onBack,
         onCustomTimer = { showCustomTimer = true },
         onStartTimer = { label, seconds -> startTimer(label, seconds, slug, recipeName) },
         onKitchenTools = { kitchenTools.open = true },
@@ -483,8 +483,9 @@ fun RecipeDetailContent(
     notLoadedMessage: String,
     serverUrl: String?,
     cookMode: Boolean,
-    onToggleCookMode: () -> Unit,
+    onStartCooking: () -> Unit,
     onBack: (() -> Unit)?,
+    onFinishCooking: (() -> Unit)? = null,
     lastCooked: String? = null,
     tagLine: List<String> = emptyList(),
     onEditTags: (() -> Unit)? = null,
@@ -531,20 +532,16 @@ fun RecipeDetailContent(
                         IconButton(onClick = onKitchenTools) { Icon(Icons.Filled.Scale, "Kitchen tools: converter and reference") }
                     }
                     IconButton(onClick = onCustomTimer) { Icon(Icons.Filled.Timer, "New timer") }
-                    FilterChip(
-                        selected = cookMode,
-                        onClick = onToggleCookMode,
-                        label = { Text(LETS_COOK) },
-                        leadingIcon = {
-                            Icon(if (cookMode) Icons.Filled.LightMode else Icons.Outlined.LightMode, contentDescription = null, modifier = Modifier.size(18.dp))
-                        },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = colors.tertiaryContainer,
-                            selectedLabelColor = colors.onTertiaryContainer,
-                            selectedLeadingIconColor = colors.tertiary,
-                        ),
-                        modifier = Modifier.padding(end = 8.dp),
-                    )
+                    // In cook mode the back arrow leaves it, and "Done cooking" ends it.
+                    if (!cookMode) {
+                        FilterChip(
+                            selected = false,
+                            onClick = onStartCooking,
+                            label = { Text(LETS_COOK) },
+                            leadingIcon = { Icon(Icons.Outlined.LightMode, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                            modifier = Modifier.padding(end = 8.dp),
+                        )
+                    }
                 },
             )
         },
@@ -735,6 +732,19 @@ fun RecipeDetailContent(
                                 }
                             }
                         }
+                    }
+                }
+            }
+            if (cookMode && onFinishCooking != null) {
+                item(key = "done-cooking") {
+                    Button(
+                        onClick = onFinishCooking,
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.tertiary, contentColor = colors.onTertiary),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp).heightIn(min = 52.dp),
+                    ) {
+                        Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Done cooking, mark as cooked", style = MaterialTheme.typography.titleMedium)
                     }
                 }
             }
