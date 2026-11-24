@@ -32,6 +32,9 @@ object Cookbook {
     )
     const val UNFILED = "More recipes"
 
+    /** The chapter the dice rolls from until another is picked, so sauces and basics don't come up for dinner. */
+    const val DICE_DEFAULT = "Mains"
+
     /** Protein filters, each with the tag/category names that count as it. */
     val proteins: List<Pair<String, Set<String>>> = listOf(
         "Chicken" to setOf("chicken", "poultry"),
@@ -172,5 +175,25 @@ object Cookbook {
         if (iso.isNullOrBlank()) return null
         return runCatching { OffsetDateTime.parse(iso).toLocalDate() }.getOrNull()
             ?: runCatching { LocalDate.parse(iso.take(10)) }.getOrNull()
+    }
+
+    /**
+     * A random recipe for the dice, from [chapter] (null = any) among the recipes that match the
+     * search and protein filter, preferring ones not cooked in the last two weeks.
+     */
+    fun surprise(
+        recipes: List<RecipeEntity>,
+        query: String,
+        chapter: String?,
+        protein: String?,
+        today: LocalDate,
+        random: kotlin.random.Random = kotlin.random.Random.Default,
+    ): RecipeEntity? {
+        val pool = filter(recipes, query, chapter, protein)
+        val fresh = pool.filter { r ->
+            val date = parseDate(r.lastMade)
+            date == null || ChronoUnit.DAYS.between(date, today) >= 14
+        }
+        return fresh.ifEmpty { pool }.randomOrNull(random)
     }
 }

@@ -155,7 +155,7 @@ The Recipes tab reads like a cookbook. Its chapters come from Mealie **categorie
 
 Common alternatives are understood too. "Main course", "Dinner" and "Entree" go under Mains, and "Side dish" goes under Sides. "Fish" and "Shrimp" count as Seafood. Any other category becomes a chapter of its own, after the standard ones. Recipes with no category go under "More recipes".
 
-**Last cooked** is Mealie's "last made" date. When you leave cook mode the app asks "Mark as cooked?", and the date then shows on the recipe card. Sort by "Not made in a while" to find old favourites. The dice button picks a random recipe from what's on screen and skips anything cooked in the last two weeks.
+**Last cooked** is Mealie's "last made" date. When you leave cook mode the app asks "Mark as cooked?", and the date then shows on the recipe card. Sort by "Not made in a while" to find old favourites. The dice button picks a random recipe and skips anything cooked in the last two weeks. It rolls from Mains unless you pick another chapter (Drinks, Sides, Desserts, or Anything) with the small arrow beside it; your pick is remembered. It also honours the search box and protein chips.
 
 ### Letting an AI assistant organise your library
 

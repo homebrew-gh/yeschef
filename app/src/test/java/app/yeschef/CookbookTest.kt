@@ -82,4 +82,18 @@ class CookbookTest {
         assertEquals(Cookbook.styleTags, tags.take(Cookbook.styleTags.size))
         assertEquals(listOf("Sunday"), tags.drop(Cookbook.styleTags.size)) // "Quick" not repeated, proteins left out
     }
+
+    @Test fun diceRollsFromPickedChapter() {
+        val today = LocalDate.parse("2026-11-24")
+        // Lasagna was cooked 4 days ago, so a Mains roll gives the roast chicken every time.
+        repeat(20) { seed ->
+            assertEquals("Roast chicken", Cookbook.surprise(box, "", "Mains", null, today, kotlin.random.Random(seed))?.name)
+        }
+        assertEquals("Garlic green beans", Cookbook.surprise(box, "", "Sides", null, today)?.name)
+        // Only recently cooked ones left: still roll one of them.
+        assertEquals("Lasagna", Cookbook.surprise(box, "", "Mains", "Beef", today)?.name)
+        assertNull(Cookbook.surprise(box, "", "Drinks", null, today))
+        val anything = (0 until 200).mapNotNull { Cookbook.surprise(box, "", null, null, today, kotlin.random.Random(it))?.name }.toSet()
+        assertEquals(box.map { it.name }.toSet() - "Lasagna", anything)
+    }
 }
