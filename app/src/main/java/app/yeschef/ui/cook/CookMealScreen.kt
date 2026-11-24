@@ -1,5 +1,10 @@
 package app.yeschef.ui.cook
 
+import app.yeschef.data.cook.CookNote
+import app.yeschef.data.cook.CookNotes
+import app.yeschef.ui.recipes.CookNoteButton
+import app.yeschef.ui.recipes.CookNoteDialog
+import app.yeschef.ui.recipes.rememberDictation
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
@@ -214,15 +219,94 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
             if (started) begin(at) // re-plan the reminders for the new time
         }
     }
+    // Cooking notes, as in single-recipe cook mode: kept on the phone per recipe, then
+    // saved to each recipe's timeline in Mealie when the meal is stopped.
+    val noteIds = remember(cookable) { cookable.mapNotNull { it.detail?.id } }
+    val notesByRecipe by remember(noteIds) {
+        if (noteIds.isEmpty()) {
+            kotlinx.coroutines.flow.flowOf(emptyMap<String, List<CookNote>>())
+        } else {
+            combine(noteIds.map { id -> container.settings.cookNotes(id) }) { lists -> noteIds.zip(lists.toList()).toMap() }
+        }
+    }.collectAsStateWithLifecycle(emptyMap())
+    val noteCount = notesByRecipe.values.sumOf { it.size }
+    var noteFor by remember { mutableStateOf<MealNoteTarget?>(null) }
+    var choosingNote by rememberSaveable { mutableStateOf(false) }
+    var typingNote by rememberSaveable { mutableStateOf(false) }
+    fun addNote(text: String) {
+        val target = noteFor ?: return
+        val step = target.step?.let { target.recipe.detail?.recipeInstructions?.getOrNull(it) }
+        val label = step?.let { CookNotes.stepLabel(it.summary?.takeIf { t -> t.isNotBlank() } ?: it.title, it.text) }
+        val note = CookNote(at = System.currentTimeMillis(), text = text, step = target.step?.plus(1), stepLabel = label)
+        val id = target.recipe.detail?.id ?: return
+        scope.launch { container.settings.updateCookNotes(id) { it + note } }
+    }
+    val dictate = rememberDictation(
+        prompt = { noteFor?.let { t -> t.recipe.name + (t.step?.let { ", step ${it + 1}" } ?: "") } ?: "Cooking note" },
+        onText = ::addNote,
+    )
+    fun startNote(target: MealNoteTarget) {
+        noteFor = target
+        if (!dictate()) typingNote = true
+    }
+    if (typingNote && noteFor != null) {
+        CookNoteDialog(
+            title = noteFor!!.recipe.name + (noteFor!!.step?.let { ", step ${it + 1}" } ?: ""),
+            initial = "",
+            onDismiss = { typingNote = false },
+            onSave = { typingNote = false; addNote(it) },
+        )
+    }
+    if (choosingNote) {
+        val targets = remember(timeline, readyAt, now, started) { noteTargets(cookable, timeline, readyAt, now, started) }
+        AlertDialog(
+            onDismissRequest = { choosingNote = false },
+            title = { Text("Note for") },
+            text = {
+                Column {
+                    targets.forEach { t ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable { choosingNote = false; startNote(t) }.heightIn(min = 48.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(Modifier.size(10.dp).background(t.recipe.color, CircleShape))
+                            Spacer(Modifier.width(12.dp))
+                            Text(t.recipe.name + (t.step?.let { ", step ${it + 1}" } ?: ""), style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { choosingNote = false }) { Text("Cancel") } },
+        )
+    }
+    // Save each recipe's notes to Mealie and clear them from the phone.
+    fun saveNotes() {
+        val pending = notesByRecipe.filterValues { it.isNotEmpty() }
+        if (pending.isEmpty()) return
+        scope.launch {
+            pending.forEach { (id, notes) ->
+                repo.saveCookNotes(id, CookNotes.message(notes) { clockText(it) })
+                container.settings.updateCookNotes(id) { emptyList() }
+            }
+            SyncScheduler.requestSync(context)
+        }
+    }
+
     var askEnd by rememberSaveable { mutableStateOf(false) }
     if (askEnd) {
         AlertDialog(
             onDismissRequest = { askEnd = false },
             title = { Text("Stop this meal?") },
-            text = { Text("Reminders for it stop. Mark every recipe in it as cooked today?") },
+            text = {
+                Text(
+                    "Reminders for it stop. Mark every recipe in it as cooked today?" +
+                        if (noteCount > 0) "\n\nYour cooking notes are saved to their recipes in Mealie either way." else "",
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     askEnd = false
+                    saveNotes()
                     scope.launch {
                         request.slugs.forEach { repo.markCooked(it) }
                         SyncScheduler.requestSync(context)
@@ -232,7 +316,7 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
                 }) { Text("Yes, we ate") }
             },
             dismissButton = {
-                TextButton(onClick = { askEnd = false; reminders.end(); onClose() }) { Text("Just stop") }
+                TextButton(onClick = { askEnd = false; saveNotes(); reminders.end(); onClose() }) { Text("Just stop") }
             },
         )
     }
@@ -267,7 +351,27 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
         onBack = onClose,
         onStartTimer = { recipe, label, seconds -> startTimer(label, seconds, recipe.slug, recipe.name) },
         onKitchenTools = { kitchenTools.open = true },
+        noteCount = noteCount,
+        onAddNote = if (noteIds.isNotEmpty()) ({
+            val targets = noteTargets(cookable, timeline, readyAt, now, started)
+            if (targets.size == 1) {
+                startNote(targets.single())
+            } else {
+                choosingNote = true
+            }
+        }) else null,
     )
+}
+
+/** What a cooking note is about: a dish, and the step of it when there is one. */
+data class MealNoteTarget(val recipe: MealRecipeView, val step: Int?)
+
+/** The choices for a new note: the steps happening now (or first, before starting), then each dish. */
+fun noteTargets(cookable: List<MealRecipeView>, timeline: MealTimeline, readyAt: Long, now: Long, started: Boolean): List<MealNoteTarget> {
+    val slots = timeline.steps.groupBy { (readyAt - it.startsBefore * 1000) / 60_000 * 60_000 }.toList()
+    val slot = (if (started) slots.lastOrNull { it.first <= now } else null) ?: slots.firstOrNull()
+    val steps = slot?.second.orEmpty().mapNotNull { s -> cookable.getOrNull(s.recipeIndex)?.let { MealNoteTarget(it, s.stepIndex) } }
+    return steps + cookable.map { MealNoteTarget(it, null) }
 }
 
 /** Stateless meal cook mode, also used for screenshots. */
@@ -295,6 +399,8 @@ fun CookMealContent(
     onKitchenTools: (() -> Unit)? = null,
     zone: ZoneId = ZoneId.systemDefault(),
     openDishes: Set<String> = emptySet(),
+    noteCount: Int = 0,
+    onAddNote: (() -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     val startAt = readyAt - timeline.leadSeconds * 1000
@@ -339,10 +445,12 @@ fun CookMealContent(
             )
         },
         containerColor = colors.background,
+        floatingActionButton = { if (onAddNote != null) CookNoteButton(noteCount, onAddNote) },
     ) { padding ->
         LazyColumn(
             Modifier.padding(padding).fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = 860.dp),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
+            // Room under the last step for the note button.
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = if (onAddNote != null) 96.dp else 32.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item {

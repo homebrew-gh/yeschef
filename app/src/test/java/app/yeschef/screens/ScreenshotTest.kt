@@ -499,6 +499,8 @@ private fun Meal(started: Boolean, now: Long, openFirst: Boolean = false, paused
         onStartTimer = { _, _, _ -> },
         zone = Sample.zone,
         openDishes = if (openFirst) setOf(views.first().slug) else emptySet(),
+        noteCount = if (started) 1 else 0,
+        onAddNote = {},
     )
 }
 
