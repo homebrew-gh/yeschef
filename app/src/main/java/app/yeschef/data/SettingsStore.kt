@@ -27,6 +27,20 @@ class SettingsStore(private val context: Context) {
     private val themeKey = stringPreferencesKey("theme")
     private val dayListsKey = stringPreferencesKey("shopping_day_lists")
     private val dayAddToKey = stringPreferencesKey("shopping_day_add_to")
+    private val diceKey = stringPreferencesKey("dice_chapter")
+
+    /** The cookbook chapter the dice rolls from, last picked; null means any recipe. Mains until picked. */
+    val diceChapter: Flow<String?> = context.dataStore.data.map { prefs ->
+        when (val v = prefs[diceKey]) {
+            null -> Cookbook.DICE_DEFAULT
+            ANY_CHAPTER -> null
+            else -> v
+        }
+    }
+
+    suspend fun saveDiceChapter(chapter: String?) {
+        context.dataStore.edit { it[diceKey] = chapter ?: ANY_CHAPTER }
+    }
 
     /** The lists picked for Shopping Day, as Mealie list ids. Empty until picked. */
     val shoppingDayLists: Flow<List<String>> = context.dataStore.data.map { prefs ->
@@ -58,6 +72,8 @@ class SettingsStore(private val context: Context) {
             if (next.isEmpty()) prefs.remove(key) else prefs[key] = Json.encodeToString(noteList, next)
         }
     }
+
+    private companion object { const val ANY_CHAPTER = "*" }
 
     private fun cookNotesKey(recipeId: String) = stringPreferencesKey("cook_notes_$recipeId")
     private val noteList = ListSerializer(CookNote.serializer())

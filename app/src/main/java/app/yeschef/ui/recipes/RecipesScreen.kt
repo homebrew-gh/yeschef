@@ -10,8 +10,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Casino
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.DropdownMenu
@@ -100,6 +103,8 @@ fun RecipesScreen(container: AppContainer, openSlug: String?, onOpen: (String?) 
     }
     val kitchenTools = rememberKitchenToolsState()
     KitchenToolsSheet(kitchenTools)
+    val diceChapter by container.settings.diceChapter.collectAsStateWithLifecycle(Cookbook.DICE_DEFAULT)
+    val scope = rememberCoroutineScope()
     val list: @Composable (Modifier) -> Unit = { modifier ->
         RecipeGrid(
             recipes, config?.serverUrl, openSlug, onOpen,
@@ -111,6 +116,8 @@ fun RecipesScreen(container: AppContainer, openSlug: String?, onOpen: (String?) 
                 SyncAction(container)
             },
             modifier = modifier,
+            diceChapter = diceChapter,
+            onDiceChapter = { scope.launch { container.settings.saveDiceChapter(it) } },
         )
     }
     // A recipe opens full screen with a back arrow, on the tablet as well as the phone.
@@ -134,6 +141,8 @@ fun RecipeGrid(
     today: LocalDate = LocalDate.now(),
     initialChapter: String? = null,
     initialProtein: String? = null,
+    diceChapter: String? = Cookbook.DICE_DEFAULT,
+    onDiceChapter: (String?) -> Unit = {},
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var chapter by rememberSaveable { mutableStateOf(initialChapter) }
@@ -155,9 +164,18 @@ fun RecipeGrid(
     Scaffold(
         topBar = {
             YcTopBar("Cookbook", actions = {
-                IconButton(enabled = shown.isNotEmpty(), onClick = { surprise(shown, today)?.let { onOpen(it.slug) } }) {
-                    Icon(Icons.Filled.Casino, contentDescription = "Surprise me")
-                }
+                DiceButton(
+                    recipes, query, protein, diceChapter,
+                    onRoll = {
+                        // Roll from the picked chapter; if the filters leave nothing there, from anything.
+                        (Cookbook.surprise(recipes, query, diceChapter, protein, today)
+                            ?: Cookbook.surprise(recipes, query, null, protein, today))?.let { onOpen(it.slug) }
+                    },
+                    onPick = { picked ->
+                        onDiceChapter(picked)
+                        Cookbook.surprise(recipes, query, picked, protein, today)?.let { onOpen(it.slug) }
+                    },
+                )
                 actions()
             })
         },
@@ -244,13 +262,61 @@ fun RecipeGrid(
     }
 }
 
-/** A random recipe from what's shown, preferring ones not cooked in the last two weeks. */
-private fun surprise(shown: List<RecipeEntity>, today: LocalDate): RecipeEntity? {
-    val fresh = shown.filter { r ->
-        val text = Cookbook.lastCookedText(r.lastMade, today)
-        text == null || !(text == "Cooked today" || text == "Cooked yesterday" || text.endsWith("days ago"))
+/**
+ * The dice rolls a random recipe from the chapter picked last (Mains until changed). The small
+ * arrow beside it picks another chapter (Drinks, Sides, Anything...), which rolls right away
+ * and is remembered. Both honour the search and protein filter.
+ */
+@Composable
+private fun DiceButton(
+    recipes: List<RecipeEntity>,
+    query: String,
+    protein: String?,
+    current: String?,
+    onRoll: () -> Unit,
+    onPick: (String?) -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    // Only chapters with something to roll, given the search and protein filter.
+    val choices = remember(recipes, query, protein) {
+        val matching = Cookbook.filter(recipes, query, null, protein)
+        Cookbook.chapterOrder(matching).map { c -> c to matching.count { Cookbook.chapterOf(it) == c } } to matching.size
     }
-    return (fresh.ifEmpty { shown }).randomOrNull()
+    val enabled = choices.second > 0
+    IconButton(enabled = enabled, onClick = onRoll) {
+        Icon(Icons.Filled.Casino, contentDescription = "Surprise me with " + (current ?: "anything"))
+    }
+    Box {
+        IconButton(enabled = enabled, onClick = { open = true }, modifier = Modifier.width(24.dp)) {
+            Icon(Icons.Filled.ArrowDropDown, contentDescription = "Pick what the dice rolls")
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            Text(
+                "Roll the dice for",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+            (choices.first + (null to choices.second)).forEach { (chapter, count) ->
+                DropdownMenuItem(
+                    text = { Text(chapter ?: "Anything") },
+                    trailingIcon = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("$count", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.width(8.dp))
+                            Icon(
+                                Icons.Filled.Check,
+                                contentDescription = if (chapter == current) "Last pick" else null,
+                                tint = if (chapter == current) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                    },
+                    onClick = { open = false; onPick(chapter) },
+                )
+            }
+        }
+    }
 }
 
 @Composable
