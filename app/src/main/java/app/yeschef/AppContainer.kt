@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
 
 /** Hand-rolled dependency wiring; the app is small enough not to need Hilt. */
 class AppContainer(context: Context) {
@@ -45,11 +46,24 @@ class AppContainer(context: Context) {
         return ApiFactory.create(url, httpClient).also { cachedApi = url to it }
     }
 
+    @Volatile private var cachedImportApi: Pair<String, MealieApi>? = null
+
+    /** Like [api], but waits minutes for a reply: Mealie answers an import only once the recipe is made. */
+    fun importApi(): MealieApi? {
+        val url = _config.value?.serverUrl ?: return null
+        cachedImportApi?.let { (cachedUrl, api) -> if (cachedUrl == url) return api }
+        val slow = httpClient.newBuilder().readTimeout(6, TimeUnit.MINUTES).build()
+        return ApiFactory.create(url, slow).also { cachedImportApi = url to it }
+    }
+
+    /** A link shared to YesChef from another app, waiting to be imported. */
+    val sharedLink = MutableStateFlow<String?>(null)
+
     /** An API client for trying out a server before saving it. */
     fun probeApi(serverUrl: String, token: String?): MealieApi =
         ApiFactory.create(serverUrl, ApiFactory.httpClient { token })
 
-    val repository = Repository(db, ::api)
+    val repository = Repository(db, ::api, ::importApi)
 
     val timers = TimerManager(context)
 

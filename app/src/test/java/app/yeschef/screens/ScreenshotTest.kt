@@ -57,6 +57,8 @@ import app.yeschef.data.Cookbook
 import app.yeschef.ui.recipes.TagEditorContent
 import app.yeschef.ui.recipes.RecipeEditorContent
 import app.yeschef.ui.recipes.AddToListContent
+import app.yeschef.ui.recipes.AddRecipeContent
+import app.yeschef.data.AiStatus
 import app.yeschef.data.RecipeDraft
 import app.yeschef.data.cook.buildMealTimeline
 import app.yeschef.ui.cook.CookMealContent
@@ -194,6 +196,23 @@ class ScreenshotTest {
         MoveMealContent(
             title = "Lemon-garlic chicken dinner", recipeCount = 4, date = Sample.today.plusDays(1), entryType = "dinner",
             today = Sample.today, onMove = { _, _ -> }, onRemove = {}, onCancel = {},
+        )
+    }
+
+    /** The cookbook's + button, with Mealie's AI set up for images. */
+    @Test fun addRecipeSheet() = sheet {
+        AddRecipeContent(
+            url = "https://www.example.com/recipes/white-chicken-chili", onUrlChange = {},
+            ai = AiStatus(enabled = true, images = true), stage = null, error = null,
+            onImportLink = {}, onTakePhoto = {}, onPickPhotos = {}, onCancel = {},
+        )
+    }
+
+    /** Without AI in Mealie: links only, and a note on how to get photos. */
+    @Test fun addRecipeSheetNoAi() = sheet {
+        AddRecipeContent(
+            url = "", onUrlChange = {}, ai = AiStatus.Off, stage = null, error = null,
+            onImportLink = {}, onTakePhoto = {}, onPickPhotos = {}, onCancel = {},
         )
     }
 
@@ -402,6 +421,7 @@ private fun Detail(cookMode: Boolean, withBack: Boolean = true, servings: Double
     onEditTags = {},
     onEdit = {},
     onAddToList = {},
+    onShare = { _, _ -> },
     onCookWithSides = {},
     initialServings = servings,
     onCustomTimer = {},

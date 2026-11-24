@@ -6,6 +6,12 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material.icons.filled.AddShoppingCart
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.automirrored.filled.Notes
+import androidx.compose.material.icons.filled.PictureAsPdf
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import app.yeschef.data.RecipeDraft
 import app.yeschef.data.changesFrom
 import app.yeschef.data.remote.MealieJson
@@ -311,11 +317,23 @@ fun RecipeDetailScreen(
         }
     }
 
+    // Share or print: plain text, a PDF file, or Android's print dialog.
+    val share: (ShareKind, Double) -> Unit = share@{ kind, scale ->
+        val recipe = detail ?: return@share
+        if (kind == ShareKind.Text) return@share shareRecipeText(context, recipe, scale)
+        scope.launch {
+            val file = runCatching { withContext(Dispatchers.IO) { writeRecipePdf(context, recipe, scale) } }
+                .getOrElse { snackbar.showSnackbar("Couldn't make the PDF (${it.message ?: it.javaClass.simpleName})."); return@launch }
+            if (kind == ShareKind.Pdf) shareRecipePdf(context, file, recipe.name) else printRecipePdf(context, file, recipe.name)
+        }
+    }
+
     val kitchenTools = rememberKitchenToolsState()
     KitchenToolsSheet(kitchenTools)
 
     RecipeDetailContent(
         title = recipeName,
+        onShare = if (detail != null) share else null,
         onEdit = if (detail != null) ({ draft = RecipeDraft.of(detail) }) else null,
         onAddToList = if (detail != null) ({ addingToList = true }) else null,
         onCookWithSides = if (detail != null) ({ pickingSides = true }) else null,
@@ -368,6 +386,7 @@ fun RecipeDetailContent(
     onCookWithSides: (() -> Unit)? = null,
     onEdit: (() -> Unit)? = null,
     onAddToList: (() -> Unit)? = null,
+    onShare: ((ShareKind, scale: Double) -> Unit)? = null,
     initialServings: Double? = null,
     onCustomTimer: () -> Unit,
     onStartTimer: (label: String, seconds: Long) -> Unit,
@@ -496,7 +515,7 @@ fun RecipeDetailContent(
                 }
             }
 
-            if ((onCookWithSides != null || onAddToList != null) && !cookMode) {
+            if ((onCookWithSides != null || onAddToList != null || onShare != null) && !cookMode) {
                 item {
                     FlowRow(Modifier.padding(start = 8.dp, top = 4.dp, end = 8.dp)) {
                         if (onAddToList != null) {
@@ -513,6 +532,7 @@ fun RecipeDetailContent(
                                 Text("Add a side and cook together")
                             }
                         }
+                        if (onShare != null) ShareMenu(onShare = { onShare(it, scale) })
                     }
                 }
             }
@@ -591,6 +611,35 @@ fun RecipeDetailContent(
                     Text("Source: $url", Modifier.padding(20.dp), style = MaterialTheme.typography.labelMedium, color = colors.outline)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ShareMenu(onShare: (ShareKind) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        TextButton(onClick = { open = true }) {
+            Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Share or print")
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(
+                text = { Text("Share as text") },
+                leadingIcon = { Icon(Icons.AutoMirrored.Filled.Notes, contentDescription = null) },
+                onClick = { open = false; onShare(ShareKind.Text) },
+            )
+            DropdownMenuItem(
+                text = { Text("Share as PDF") },
+                leadingIcon = { Icon(Icons.Filled.PictureAsPdf, contentDescription = null) },
+                onClick = { open = false; onShare(ShareKind.Pdf) },
+            )
+            DropdownMenuItem(
+                text = { Text("Print") },
+                leadingIcon = { Icon(Icons.Filled.Print, contentDescription = null) },
+                onClick = { open = false; onShare(ShareKind.Print) },
+            )
         }
     }
 }

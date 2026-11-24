@@ -47,12 +47,21 @@ your own Mealie server.
 - **Servings scaler.** Scales every amount, including ones Mealie hasn't parsed.
 - **Nutrition.** Mealie's per-serving values, in a section that expands when tapped.
 - **Recipe photos.** Take one with the camera or pick one from the gallery.
+- **Add recipes from a link or a photo.** Tap **+** in the cookbook and paste a recipe page's link,
+  or share a page to YesChef from your browser. Mealie imports it and the recipe opens. If Mealie
+  has an AI provider set up (group settings, AI), the AI reads pages Mealie's own reader can't, and
+  **From a photo** appears: snap a cookbook page or recipe card (or pick up to 4 photos) and the AI
+  writes it up. The photo option needs an image provider in Mealie's AI settings. Imports need the
+  server, so they don't work offline.
 - **Edit recipes by hand.** Change the name, description, servings, prep/cook/total times,
   ingredients (add, remove, reorder, one per line, amount first) and steps. Works offline; Mealie
   re-reads new and changed ingredient lines when the edit syncs, so they still scale and go on the
   shopping list properly. Leave a time blank if you don't know it; cook time 0 means no cooking.
 - **Add any recipe to any grocery list.** Pick the list (or make a new one), choose the servings and
   untick what you already have. Works offline; Mealie scales and merges the lines on the next sync.
+- **Share or print any recipe.** The **Share or print** button under a recipe's times sends it as text (messages, email,
+  notes) or as a PDF, or opens Android's print dialog (which can also save a PDF). Amounts match the
+  servings you've picked.
 - **Meal plan.** The next three weeks; planned recipes are downloaded ahead so they open offline.
 - **Phone and tablet.** On a tablet the recipe opens beside the list.
 - **Light, dark or system theme.**

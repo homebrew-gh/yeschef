@@ -10,6 +10,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Casino
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.DropdownMenu
@@ -78,15 +80,38 @@ import app.yeschef.ui.cook.rememberKitchenToolsState
 fun RecipesScreen(container: AppContainer, openSlug: String?, onOpen: (String?) -> Unit, onCookMeal: (MealRequest) -> Unit = {}) {
     val recipes by remember { container.repository.recipes() }.collectAsStateWithLifecycle(emptyList())
     val config by container.config.collectAsStateWithLifecycle()
+    // "Add a recipe" sheet, opened from the top bar or by a link shared from another app.
+    var adding by rememberSaveable { mutableStateOf<String?>(null) }
+    val shared by container.sharedLink.collectAsStateWithLifecycle()
+    LaunchedEffect(shared) {
+        shared?.let {
+            adding = it
+            container.sharedLink.value = null
+            onOpen(null)
+        }
+    }
+    adding?.let { initialUrl ->
+        AddRecipeSheet(
+            container,
+            initialUrl = initialUrl,
+            onDismiss = { adding = null },
+            onImported = { slug -> adding = null; onOpen(slug) },
+        )
+    }
     val kitchenTools = rememberKitchenToolsState()
     KitchenToolsSheet(kitchenTools)
     val list: @Composable (Modifier) -> Unit = { modifier ->
-        RecipeGrid(recipes, config?.serverUrl, openSlug, onOpen, actions = {
-            IconButton(onClick = { kitchenTools.show(KitchenTool.REFERENCE) }) {
-                Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = "Kitchen reference")
-            }
-            SyncAction(container)
-        }, modifier = modifier)
+        RecipeGrid(
+            recipes, config?.serverUrl, openSlug, onOpen,
+            actions = {
+                IconButton(onClick = { adding = "" }) { Icon(Icons.Filled.Add, contentDescription = "Add a recipe") }
+                IconButton(onClick = { kitchenTools.show(KitchenTool.REFERENCE) }) {
+                    Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = "Kitchen reference")
+                }
+                SyncAction(container)
+            },
+            modifier = modifier,
+        )
     }
     // A recipe opens full screen with a back arrow, on the tablet as well as the phone.
     if (openSlug != null) {
@@ -197,7 +222,7 @@ fun RecipeGrid(
             if (shown.isEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Text(
-                        if (recipes.isEmpty()) "No recipes yet. Add some in Mealie, or ask your agent to." else "Nothing matches.",
+                        if (recipes.isEmpty()) "No recipes yet. Tap + to add one from a link, or ask your agent to." else "Nothing matches.",
                         style = MaterialTheme.typography.bodyLarge,
                         color = colors.onSurfaceVariant,
                         modifier = Modifier.padding(vertical = 32.dp),
