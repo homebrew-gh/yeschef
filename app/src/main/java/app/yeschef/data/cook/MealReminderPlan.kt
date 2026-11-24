@@ -13,7 +13,21 @@ data class MealSession(
     val slugs: List<String>,
     val readyAt: Long,
     val reminders: List<MealReminder> = emptyList(),
-)
+    /** When the cook paused the meal; its reminders are off until it resumes. */
+    val pausedAt: Long? = null,
+) {
+    /** The ready time, pushed back by however long the meal has been paused so far. */
+    fun readyAtNow(now: Long): Long = readyAt + (pausedAt?.let { (now - it).coerceAtLeast(0) } ?: 0)
+
+    fun paused(at: Long): MealSession = if (pausedAt != null) this else copy(pausedAt = at)
+
+    /** Resuming pushes the ready time and every reminder back by the time spent paused. */
+    fun resumed(at: Long): MealSession {
+        val p = pausedAt ?: return this
+        val shift = (at - p).coerceAtLeast(0)
+        return copy(readyAt = readyAt + shift, reminders = reminders.map { it.copy(at = it.at + shift) }, pausedAt = null)
+    }
+}
 
 /** After this long with nothing to do, the next step gets a reminder. */
 const val IDLE_GAP_SECONDS = 10 * 60L

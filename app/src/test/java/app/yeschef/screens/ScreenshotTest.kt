@@ -331,6 +331,9 @@ class ScreenshotTest {
         phone(tab = 2) { Meal(started = true, now = Sample.at(17, 52)) }
     }
 
+    /** A meal under way, paused: Resume and Stop. */
+    @Test fun mealPaused() = phone(tab = 2) { Meal(started = true, now = Sample.at(17, 52), paused = true) }
+
     /** Tapping a dish at the top opens its ingredients. */
     @Test fun mealDishIngredients() = phone(tab = 2) { Meal(started = false, now = Sample.at(9, 0), openFirst = true) }
 
@@ -474,7 +477,7 @@ private fun Detail(cookMode: Boolean, withBack: Boolean = true, servings: Double
 )
 
 @Composable
-private fun Meal(started: Boolean, now: Long, openFirst: Boolean = false) {
+private fun Meal(started: Boolean, now: Long, openFirst: Boolean = false, paused: Boolean = false) {
     val views = Sample.mealRecipes.mapIndexed { i, d -> MealRecipeView(d.slug, d.name, d, RecipeTagColors[i]) }
     CookMealContent(
         title = "Pulled pork dinner",
@@ -484,7 +487,8 @@ private fun Meal(started: Boolean, now: Long, openFirst: Boolean = false) {
         readyAt = Sample.at(18, 30),
         now = now,
         started = started,
-        nextReminder = if (started) "6:00 PM · Crispy smashed potatoes, step 2" else null,
+        nextReminder = if (started && !paused) "6:00 PM · Crispy smashed potatoes, step 2" else null,
+        paused = paused,
         keepScreenOn = started,
         onToggleScreen = {},
         onPickTime = {},

@@ -1,5 +1,10 @@
 package app.yeschef.ui.cook
 
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -180,7 +185,9 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
         while (true) { delay(30_000); value = System.currentTimeMillis() }
     }
     var chosenReadyAt by rememberSaveable(request.encode()) { mutableStateOf<Long?>(null) }
-    val readyAt = (if (started) session?.readyAt else null) ?: chosenReadyAt
+    val paused = started && session?.pausedAt != null
+    // While paused the ready time keeps moving back, so the timeline stays where it stopped.
+    val readyAt = (if (started) session?.readyAtNow(now) else null) ?: chosenReadyAt
         ?: defaultReadyAt(request.date, request.entryType, timeline.leadSeconds, now)
 
     val notifyPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -211,7 +218,7 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
     if (askEnd) {
         AlertDialog(
             onDismissRequest = { askEnd = false },
-            title = { Text("Finish this meal?") },
+            title = { Text("Stop this meal?") },
             text = { Text("Reminders for it stop. Mark every recipe in it as cooked today?") },
             confirmButton = {
                 TextButton(onClick = {
@@ -247,7 +254,10 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
         readyAt = readyAt,
         now = now,
         started = started,
-        nextReminder = if (started) session?.reminders?.firstOrNull { it.at > now }?.let { it.title } else null,
+        nextReminder = if (started && !paused) session?.reminders?.firstOrNull { it.at > now }?.let { it.title } else null,
+        paused = paused,
+        onPause = { reminders.pause() },
+        onResume = { reminders.resume() },
         keepScreenOn = keepOn,
         onToggleScreen = { keepOn = !keepOn },
         onPickTime = { picking = true },
@@ -271,6 +281,9 @@ fun CookMealContent(
     now: Long,
     started: Boolean,
     nextReminder: String?,
+    paused: Boolean = false,
+    onPause: () -> Unit = {},
+    onResume: () -> Unit = {},
     keepScreenOn: Boolean,
     onToggleScreen: () -> Unit,
     onPickTime: () -> Unit,
@@ -336,6 +349,7 @@ fun CookMealContent(
                 ReadyCard(
                     readyAt = readyAt, startAt = startAt, now = now, started = started, nextReminder = nextReminder,
                     zone = zone, onPickTime = onPickTime, onUseEarliest = onUseEarliest, onStart = onStart, onFinish = onFinish,
+                    paused = paused, onPause = onPause, onResume = onResume,
                     canStart = cookable.isNotEmpty(),
                 )
             }
@@ -401,6 +415,9 @@ private fun ReadyCard(
     onUseEarliest: () -> Unit,
     onStart: () -> Unit,
     onFinish: () -> Unit,
+    paused: Boolean = false,
+    onPause: () -> Unit = {},
+    onResume: () -> Unit = {},
 ) {
     val colors = MaterialTheme.colorScheme
     Surface(shape = MaterialTheme.shapes.extraLarge, color = colors.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
@@ -423,14 +440,38 @@ private fun ReadyCard(
             Spacer(Modifier.height(10.dp))
             if (started) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.NotificationsActive, null, tint = colors.primary, modifier = Modifier.size(18.dp))
+                    Icon(
+                        if (paused) Icons.Filled.Pause else Icons.Filled.NotificationsActive, null,
+                        tint = if (paused) colors.tertiary else colors.primary, modifier = Modifier.size(18.dp),
+                    )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        nextReminder?.let { "Next reminder: $it" } ?: "Reminders are on",
+                        when {
+                            paused -> "Paused. Reminders are off and the ready time moves back until you resume."
+                            else -> nextReminder?.let { "Next reminder: $it" } ?: "Reminders are on"
+                        },
                         style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f),
                     )
-                    TextButton(onClick = onFinish) { Text("Finish") }
+                }
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (paused) {
+                        Button(onClick = onResume, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Filled.PlayArrow, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Resume")
+                        }
+                    } else {
+                        FilledTonalButton(onClick = onPause, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Filled.Pause, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Pause")
+                        }
+                    }
+                    OutlinedButton(onClick = onFinish, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.Stop, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Stop")
+                    }
                 }
             } else {
                 Button(onClick = onStart, enabled = canStart, modifier = Modifier.fillMaxWidth()) { Text("Start this meal") }
@@ -615,13 +656,14 @@ fun MealInProgressBar(session: MealSession, onOpen: () -> Unit, modifier: Modifi
     val now by produceState(System.currentTimeMillis()) {
         while (true) { delay(30_000); value = System.currentTimeMillis() }
     }
-    val next = session.reminders.firstOrNull { it.at > now }
+    val next = if (session.pausedAt != null) null else session.reminders.firstOrNull { it.at > now }
     Surface(color = colors.primaryContainer, modifier = modifier.fillMaxWidth().clickable(onClick = onOpen)) {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.NotificationsActive, null, tint = colors.onPrimaryContainer, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text(session.title + " · ready " + clockText(session.readyAt), style = MaterialTheme.typography.titleSmall, color = colors.onPrimaryContainer)
+                Text(session.title + " · ready " + clockText(session.readyAtNow(now)), style = MaterialTheme.typography.titleSmall, color = colors.onPrimaryContainer)
+                if (session.pausedAt != null) Text("Paused", style = MaterialTheme.typography.bodySmall, color = colors.onPrimaryContainer)
                 next?.let { Text("Next: ${it.title}", style = MaterialTheme.typography.bodySmall, color = colors.onPrimaryContainer) }
             }
             Text("Open", style = MaterialTheme.typography.labelLarge, color = colors.primary)

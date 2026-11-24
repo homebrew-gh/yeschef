@@ -40,9 +40,9 @@ class MealReminders(private val context: Context) {
         createChannel()
         val s = _session.value
         val now = System.currentTimeMillis()
-        if (s != null && now > s.readyAt + STALE_AFTER_MS) {
+        if (s != null && now > s.readyAtNow(now) + STALE_AFTER_MS) {
             end()
-        } else {
+        } else if (s?.pausedAt == null) {
             s?.reminders?.filter { it.at > now }?.forEach(::schedule)
         }
     }
@@ -50,7 +50,7 @@ class MealReminders(private val context: Context) {
     /** After a reboot: alarms were lost, so show any reminder that came due while the phone was off. */
     fun catchUpAfterBoot() {
         val now = System.currentTimeMillis()
-        _session.value?.reminders
+        _session.value?.takeIf { it.pausedAt == null }?.reminders
             ?.filter { it.at in (now - MISSED_GRACE_MS)..now }
             ?.maxByOrNull { it.at }
             ?.let(::show)
@@ -60,6 +60,20 @@ class MealReminders(private val context: Context) {
         _session.value?.reminders?.forEach { cancel(it.id) }
         save(session)
         session.reminders.forEach(::schedule)
+    }
+
+    /** Stops the clock: no reminders until [resume]. */
+    fun pause(now: Long = System.currentTimeMillis()) {
+        val s = _session.value ?: return
+        s.reminders.forEach { cancel(it.id) }
+        save(s.paused(now))
+    }
+
+    /** Carries on where it stopped: the ready time and the reminders move back by the pause. */
+    fun resume(now: Long = System.currentTimeMillis()) {
+        val s = _session.value?.resumed(now) ?: return
+        save(s)
+        s.reminders.filter { it.at > now }.forEach(::schedule)
     }
 
     fun end() {
