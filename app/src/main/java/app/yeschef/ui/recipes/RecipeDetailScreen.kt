@@ -14,6 +14,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import app.yeschef.data.RecipeDraft
 import app.yeschef.data.changesFrom
+import app.yeschef.data.cook.CookNote
+import app.yeschef.data.cook.CookNotes
+import app.yeschef.ui.cook.clockText
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.filled.Mic
 import app.yeschef.data.remote.MealieJson
 import app.yeschef.ui.cook.MealRequest
 import androidx.compose.foundation.layout.widthIn
@@ -216,6 +222,93 @@ fun RecipeDetailScreen(
         )
     }
 
+    // Cooking notes: the mic button in cook mode takes a spoken note, tagged with the step
+    // on screen. They stay on the phone until reviewed on leaving cook mode, then go to the
+    // recipe's timeline in Mealie for an assistant to read.
+    val noteId = detail?.id ?: entity?.id
+    val cookNotes by remember(noteId) {
+        noteId?.let { container.settings.cookNotes(it) } ?: kotlinx.coroutines.flow.flowOf(emptyList<CookNote>())
+    }.collectAsStateWithLifecycle(emptyList())
+    fun changeNotes(change: (List<CookNote>) -> List<CookNote>) {
+        val id = noteId ?: return
+        scope.launch { container.settings.updateCookNotes(id, change) }
+    }
+    var noteStep by rememberSaveable { mutableStateOf<Int?>(null) }
+    var noteAt by rememberSaveable { mutableStateOf(0L) }
+    var typingNote by rememberSaveable { mutableStateOf(false) }
+    var editingNoteAt by rememberSaveable { mutableStateOf<Long?>(null) }
+    var reviewingNotes by rememberSaveable { mutableStateOf(false) }
+    var markCookedToo by rememberSaveable { mutableStateOf(true) }
+    // Deleting the last note closes the review; a later note shouldn't reopen it.
+    LaunchedEffect(cookNotes.isEmpty()) { if (cookNotes.isEmpty()) reviewingNotes = false }
+    fun addNote(text: String) {
+        val step = noteStep
+        val s = step?.let { detail?.recipeInstructions?.getOrNull(it) }
+        val label = s?.let { CookNotes.stepLabel(it.summary?.takeIf { t -> t.isNotBlank() } ?: it.title, it.text) }
+        val note = CookNote(at = noteAt, text = text, step = step?.plus(1), stepLabel = label)
+        changeNotes { it + note }
+        if (!reviewingNotes) scope.launch { snackbar.showSnackbar("Note added") }
+    }
+    val dictate = rememberDictation(
+        prompt = { noteStep?.let { "Note for step ${it + 1}" } ?: "Cooking note" },
+        onText = ::addNote,
+    )
+    fun startNote(step: Int?) {
+        noteStep = step
+        noteAt = System.currentTimeMillis()
+        if (!dictate()) typingNote = true
+    }
+    if (typingNote) {
+        CookNoteDialog(
+            title = noteStep?.let { "Note for step ${it + 1}" } ?: "Cooking note",
+            initial = "",
+            onDismiss = { typingNote = false },
+            onSave = { typingNote = false; addNote(it) },
+        )
+    }
+    cookNotes.firstOrNull { it.at == editingNoteAt }?.let { editing ->
+        CookNoteDialog(
+            title = "Edit note",
+            initial = editing.text,
+            onDismiss = { editingNoteAt = null },
+            onSave = { text ->
+                editingNoteAt = null
+                changeNotes { notes -> notes.map { if (it.at == editing.at) it.copy(text = text) else it } }
+            },
+        )
+    }
+    if (reviewingNotes && noteId != null && cookNotes.isNotEmpty()) {
+        ModalBottomSheet(onDismissRequest = { reviewingNotes = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+            CookNotesReviewContent(
+                recipeName = recipeName,
+                notes = cookNotes,
+                clock = { clockText(it) },
+                markCooked = markCookedToo,
+                onMarkCooked = { markCookedToo = it },
+                onEdit = { editingNoteAt = it.at },
+                onDelete = { gone -> changeNotes { notes -> notes.filterNot { it.at == gone.at } } },
+                onAdd = {
+                    noteStep = null
+                    noteAt = System.currentTimeMillis()
+                    typingNote = true
+                },
+                onKeep = { reviewingNotes = false },
+                onSave = {
+                    reviewingNotes = false
+                    val message = CookNotes.message(cookNotes) { clockText(it) }
+                    val cooked = markCookedToo
+                    scope.launch {
+                        repo.saveCookNotes(noteId, message)
+                        if (cooked) repo.markCooked(slug)
+                        container.settings.updateCookNotes(noteId) { emptyList() }
+                        SyncScheduler.requestSync(context)
+                        snackbar.showSnackbar(if (cooked) "Notes saved and marked as cooked" else "Notes saved to Mealie")
+                    }
+                },
+            )
+        }
+    }
+
     // Chapter and tags editor, in a bottom sheet.
     var editingTags by rememberSaveable { mutableStateOf(false) }
     val library by remember { repo.recipes() }.collectAsStateWithLifecycle(emptyList())
@@ -342,7 +435,9 @@ fun RecipeDetailScreen(
         serverUrl = config?.serverUrl,
         cookMode = cookMode,
         onToggleCookMode = {
-            if (cookMode && detail != null) askCooked = true
+            if (cookMode && detail != null) {
+                if (cookNotes.isNotEmpty()) reviewingNotes = true else askCooked = true
+            }
             cookMode = !cookMode
         },
         tagLine = entity?.let { Cookbook.names(it.categories) + Cookbook.names(it.tags) }.orEmpty(),
@@ -359,6 +454,9 @@ fun RecipeDetailScreen(
             takePhoto.launch(uri)
         },
         onPickPhoto = { pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+        noteCount = cookNotes.size,
+        onAddNote = if (noteId != null) ({ step -> startNote(step) }) else null,
+        onReviewNotes = if (noteId != null && cookNotes.isNotEmpty()) ({ reviewingNotes = true }) else null,
         snackbarHostState = snackbar,
     )
 }
@@ -394,6 +492,9 @@ fun RecipeDetailContent(
     photoUploading: Boolean = false,
     onTakePhoto: (() -> Unit)? = null,
     onPickPhoto: (() -> Unit)? = null,
+    noteCount: Int = 0,
+    onAddNote: ((step: Int?) -> Unit)? = null,
+    onReviewNotes: (() -> Unit)? = null,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
     val colors = MaterialTheme.colorScheme
@@ -404,6 +505,7 @@ fun RecipeDetailContent(
     var servings by remember(detail?.id) { mutableStateOf(initialServings ?: servingsBase ?: 1.0) }
     var factor by remember(detail?.id) { mutableStateOf(1.0) }
     val scale = servingsBase?.let { servings / it } ?: factor
+    val listState = rememberLazyListState()
     val bodyStyle = if (cookMode) MaterialTheme.typography.titleLarge.copy(fontFamily = MaterialTheme.typography.bodyLarge.fontFamily)
     else MaterialTheme.typography.bodyLarge
 
@@ -444,6 +546,11 @@ fun RecipeDetailContent(
         },
         containerColor = colors.background,
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        floatingActionButton = {
+            if (cookMode && detail != null && onAddNote != null) {
+                CookNoteButton(noteCount) { onAddNote(stepInView(listState)) }
+            }
+        },
     ) { padding ->
         if (detail == null) {
             Text(notLoadedMessage, Modifier.padding(padding).padding(24.dp), style = MaterialTheme.typography.bodyLarge)
@@ -453,7 +560,9 @@ fun RecipeDetailContent(
         // On the tablet the recipe keeps a readable width, centred.
         LazyColumn(
             Modifier.padding(padding).fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = 860.dp),
-            contentPadding = PaddingValues(bottom = 32.dp),
+            state = listState,
+            // Room under the last step for the note button.
+            contentPadding = PaddingValues(bottom = if (cookMode && onAddNote != null) 96.dp else 32.dp),
         ) {
             if (!cookMode) {
                 item {
@@ -515,9 +624,16 @@ fun RecipeDetailContent(
                 }
             }
 
-            if ((onCookWithSides != null || onAddToList != null || onShare != null) && !cookMode) {
+            if ((onCookWithSides != null || onAddToList != null || onShare != null || onReviewNotes != null) && !cookMode) {
                 item {
                     FlowRow(Modifier.padding(start = 8.dp, top = 4.dp, end = 8.dp)) {
+                        if (onReviewNotes != null) {
+                            TextButton(onClick = onReviewNotes) {
+                                Icon(Icons.Filled.Mic, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(if (noteCount == 1) "Save 1 cooking note" else "Save $noteCount cooking notes")
+                            }
+                        }
                         if (onAddToList != null) {
                             TextButton(onClick = onAddToList) {
                                 Icon(Icons.Filled.AddShoppingCart, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -567,7 +683,7 @@ fun RecipeDetailContent(
             }
 
             item { SectionLabel("Method") }
-            itemsIndexed(detail.recipeInstructions) { index, step ->
+            itemsIndexed(detail.recipeInstructions, key = { index, _ -> STEP_KEY + index }) { index, step ->
                 Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
                     step.title?.takeIf { it.isNotBlank() }?.let {
                         Text(it, style = MaterialTheme.typography.titleMedium, color = colors.primary, modifier = Modifier.padding(start = 4.dp, bottom = 6.dp, top = 8.dp))
@@ -613,6 +729,18 @@ fun RecipeDetailContent(
             }
         }
     }
+}
+
+private const val STEP_KEY = "step-"
+
+/** The method step the cook is looking at (index from 0), or null before the method. */
+private fun stepInView(state: LazyListState): Int? {
+    val info = state.layoutInfo
+    val steps = info.visibleItemsInfo.mapNotNull { item ->
+        (item.key as? String)?.takeIf { it.startsWith(STEP_KEY) }?.removePrefix(STEP_KEY)?.toIntOrNull()
+            ?.let { Triple(it, item.offset, item.size) }
+    }
+    return CookNotes.stepInView(steps, info.viewportStartOffset)
 }
 
 @Composable
