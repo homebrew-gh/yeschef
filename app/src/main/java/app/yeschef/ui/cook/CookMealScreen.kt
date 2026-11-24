@@ -1,5 +1,22 @@
 package app.yeschef.ui.cook
 
+import app.yeschef.data.cook.CookNote
+import app.yeschef.data.cook.CookNotes
+import app.yeschef.ui.recipes.CookNoteButton
+import app.yeschef.ui.recipes.CookNoteDialog
+import app.yeschef.ui.recipes.rememberDictation
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material3.Checkbox
+import androidx.compose.ui.text.style.TextDecoration
+import app.yeschef.data.isHeadingOnly
+import app.yeschef.ui.recipes.ingredientText
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -173,7 +190,9 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
         while (true) { delay(30_000); value = System.currentTimeMillis() }
     }
     var chosenReadyAt by rememberSaveable(request.encode()) { mutableStateOf<Long?>(null) }
-    val readyAt = (if (started) session?.readyAt else null) ?: chosenReadyAt
+    val paused = started && session?.pausedAt != null
+    // While paused the ready time keeps moving back, so the timeline stays where it stopped.
+    val readyAt = (if (started) session?.readyAtNow(now) else null) ?: chosenReadyAt
         ?: defaultReadyAt(request.date, request.entryType, timeline.leadSeconds, now)
 
     val notifyPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -200,15 +219,94 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
             if (started) begin(at) // re-plan the reminders for the new time
         }
     }
+    // Cooking notes, as in single-recipe cook mode: kept on the phone per recipe, then
+    // saved to each recipe's timeline in Mealie when the meal is stopped.
+    val noteIds = remember(cookable) { cookable.mapNotNull { it.detail?.id } }
+    val notesByRecipe by remember(noteIds) {
+        if (noteIds.isEmpty()) {
+            kotlinx.coroutines.flow.flowOf(emptyMap<String, List<CookNote>>())
+        } else {
+            combine(noteIds.map { id -> container.settings.cookNotes(id) }) { lists -> noteIds.zip(lists.toList()).toMap() }
+        }
+    }.collectAsStateWithLifecycle(emptyMap())
+    val noteCount = notesByRecipe.values.sumOf { it.size }
+    var noteFor by remember { mutableStateOf<MealNoteTarget?>(null) }
+    var choosingNote by rememberSaveable { mutableStateOf(false) }
+    var typingNote by rememberSaveable { mutableStateOf(false) }
+    fun addNote(text: String) {
+        val target = noteFor ?: return
+        val step = target.step?.let { target.recipe.detail?.recipeInstructions?.getOrNull(it) }
+        val label = step?.let { CookNotes.stepLabel(it.summary?.takeIf { t -> t.isNotBlank() } ?: it.title, it.text) }
+        val note = CookNote(at = System.currentTimeMillis(), text = text, step = target.step?.plus(1), stepLabel = label)
+        val id = target.recipe.detail?.id ?: return
+        scope.launch { container.settings.updateCookNotes(id) { it + note } }
+    }
+    val dictate = rememberDictation(
+        prompt = { noteFor?.let { t -> t.recipe.name + (t.step?.let { ", step ${it + 1}" } ?: "") } ?: "Cooking note" },
+        onText = ::addNote,
+    )
+    fun startNote(target: MealNoteTarget) {
+        noteFor = target
+        if (!dictate()) typingNote = true
+    }
+    if (typingNote && noteFor != null) {
+        CookNoteDialog(
+            title = noteFor!!.recipe.name + (noteFor!!.step?.let { ", step ${it + 1}" } ?: ""),
+            initial = "",
+            onDismiss = { typingNote = false },
+            onSave = { typingNote = false; addNote(it) },
+        )
+    }
+    if (choosingNote) {
+        val targets = remember(timeline, readyAt, now, started) { noteTargets(cookable, timeline, readyAt, now, started) }
+        AlertDialog(
+            onDismissRequest = { choosingNote = false },
+            title = { Text("Note for") },
+            text = {
+                Column {
+                    targets.forEach { t ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable { choosingNote = false; startNote(t) }.heightIn(min = 48.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(Modifier.size(10.dp).background(t.recipe.color, CircleShape))
+                            Spacer(Modifier.width(12.dp))
+                            Text(t.recipe.name + (t.step?.let { ", step ${it + 1}" } ?: ""), style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { choosingNote = false }) { Text("Cancel") } },
+        )
+    }
+    // Save each recipe's notes to Mealie and clear them from the phone.
+    fun saveNotes() {
+        val pending = notesByRecipe.filterValues { it.isNotEmpty() }
+        if (pending.isEmpty()) return
+        scope.launch {
+            pending.forEach { (id, notes) ->
+                repo.saveCookNotes(id, CookNotes.message(notes) { clockText(it) })
+                container.settings.updateCookNotes(id) { emptyList() }
+            }
+            SyncScheduler.requestSync(context)
+        }
+    }
+
     var askEnd by rememberSaveable { mutableStateOf(false) }
     if (askEnd) {
         AlertDialog(
             onDismissRequest = { askEnd = false },
-            title = { Text("Finish this meal?") },
-            text = { Text("Reminders for it stop. Mark every recipe in it as cooked today?") },
+            title = { Text("Stop this meal?") },
+            text = {
+                Text(
+                    "Reminders for it stop. Mark every recipe in it as cooked today?" +
+                        if (noteCount > 0) "\n\nYour cooking notes are saved to their recipes in Mealie either way." else "",
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     askEnd = false
+                    saveNotes()
                     scope.launch {
                         request.slugs.forEach { repo.markCooked(it) }
                         SyncScheduler.requestSync(context)
@@ -218,7 +316,7 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
                 }) { Text("Yes, we ate") }
             },
             dismissButton = {
-                TextButton(onClick = { askEnd = false; reminders.end(); onClose() }) { Text("Just stop") }
+                TextButton(onClick = { askEnd = false; saveNotes(); reminders.end(); onClose() }) { Text("Just stop") }
             },
         )
     }
@@ -240,7 +338,10 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
         readyAt = readyAt,
         now = now,
         started = started,
-        nextReminder = if (started) session?.reminders?.firstOrNull { it.at > now }?.let { it.title } else null,
+        nextReminder = if (started && !paused) session?.reminders?.firstOrNull { it.at > now }?.let { it.title } else null,
+        paused = paused,
+        onPause = { reminders.pause() },
+        onResume = { reminders.resume() },
         keepScreenOn = keepOn,
         onToggleScreen = { keepOn = !keepOn },
         onPickTime = { picking = true },
@@ -250,7 +351,27 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
         onBack = onClose,
         onStartTimer = { recipe, label, seconds -> startTimer(label, seconds, recipe.slug, recipe.name) },
         onKitchenTools = { kitchenTools.open = true },
+        noteCount = noteCount,
+        onAddNote = if (noteIds.isNotEmpty()) ({
+            val targets = noteTargets(cookable, timeline, readyAt, now, started)
+            if (targets.size == 1) {
+                startNote(targets.single())
+            } else {
+                choosingNote = true
+            }
+        }) else null,
     )
+}
+
+/** What a cooking note is about: a dish, and the step of it when there is one. */
+data class MealNoteTarget(val recipe: MealRecipeView, val step: Int?)
+
+/** The choices for a new note: the steps happening now (or first, before starting), then each dish. */
+fun noteTargets(cookable: List<MealRecipeView>, timeline: MealTimeline, readyAt: Long, now: Long, started: Boolean): List<MealNoteTarget> {
+    val slots = timeline.steps.groupBy { (readyAt - it.startsBefore * 1000) / 60_000 * 60_000 }.toList()
+    val slot = (if (started) slots.lastOrNull { it.first <= now } else null) ?: slots.firstOrNull()
+    val steps = slot?.second.orEmpty().mapNotNull { s -> cookable.getOrNull(s.recipeIndex)?.let { MealNoteTarget(it, s.stepIndex) } }
+    return steps + cookable.map { MealNoteTarget(it, null) }
 }
 
 /** Stateless meal cook mode, also used for screenshots. */
@@ -264,6 +385,9 @@ fun CookMealContent(
     now: Long,
     started: Boolean,
     nextReminder: String?,
+    paused: Boolean = false,
+    onPause: () -> Unit = {},
+    onResume: () -> Unit = {},
     keepScreenOn: Boolean,
     onToggleScreen: () -> Unit,
     onPickTime: () -> Unit,
@@ -274,9 +398,19 @@ fun CookMealContent(
     onStartTimer: (MealRecipeView, String, Long) -> Unit,
     onKitchenTools: (() -> Unit)? = null,
     zone: ZoneId = ZoneId.systemDefault(),
+    openDishes: Set<String> = emptySet(),
+    noteCount: Int = 0,
+    onAddNote: (() -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     val startAt = readyAt - timeline.leadSeconds * 1000
+    // Each dish's ingredient list opens under its name. Ticks are shared with the step cards.
+    var open by rememberSaveable { mutableStateOf(openDishes.toList()) }
+    var checked by remember { mutableStateOf(mapOf<String, Set<Int>>()) }
+    fun toggle(slug: String, i: Int) {
+        val ticked = checked[slug].orEmpty()
+        checked = checked + (slug to if (i in ticked) ticked - i else ticked + i)
+    }
     // Merged steps, bucketed by the minute they start.
     val slots = remember(timeline, readyAt) {
         timeline.steps.groupBy { (readyAt - it.startsBefore * 1000) / 60_000 * 60_000 }.toList()
@@ -311,16 +445,19 @@ fun CookMealContent(
             )
         },
         containerColor = colors.background,
+        floatingActionButton = { if (onAddNote != null) CookNoteButton(noteCount, onAddNote) },
     ) { padding ->
         LazyColumn(
             Modifier.padding(padding).fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = 860.dp),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
+            // Room under the last step for the note button.
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = if (onAddNote != null) 96.dp else 32.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item {
                 ReadyCard(
                     readyAt = readyAt, startAt = startAt, now = now, started = started, nextReminder = nextReminder,
                     zone = zone, onPickTime = onPickTime, onUseEarliest = onUseEarliest, onStart = onStart, onFinish = onFinish,
+                    paused = paused, onPause = onPause, onResume = onResume,
                     canStart = cookable.isNotEmpty(),
                 )
             }
@@ -328,7 +465,13 @@ fun CookMealContent(
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     recipes.forEach { r ->
                         val plan = cookable.indexOf(r).takeIf { it >= 0 }?.let { timeline.recipes.getOrNull(it) }
-                        RecipeLine(r, plan?.let { readyAt - it.startsBefore * 1000 }, plan?.totalSeconds, plan?.timesKnown, zone)
+                        val isOpen = r.slug in open
+                        RecipeLine(
+                            r, plan?.let { readyAt - it.startsBefore * 1000 }, plan?.totalSeconds, plan?.timesKnown, zone,
+                            open = isOpen,
+                            onToggle = if (r.detail != null) ({ open = if (isOpen) open - r.slug else open + r.slug }) else null,
+                        )
+                        if (isOpen) DishIngredients(r, checked[r.slug].orEmpty()) { toggle(r.slug, it) }
                     }
                 }
             }
@@ -347,7 +490,10 @@ fun CookMealContent(
                             if (at == current) Text("NOW", style = OverlineStyle, color = colors.primary)
                         }
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            steps.forEach { s -> StepCard(cookable[s.recipeIndex], s.stepIndex, onStartTimer) }
+                            steps.forEach { s ->
+                                val r = cookable[s.recipeIndex]
+                                StepCard(r, s.stepIndex, checked[r.slug].orEmpty(), { toggle(r.slug, it) }, onStartTimer)
+                            }
                         }
                     }
                 }
@@ -377,6 +523,9 @@ private fun ReadyCard(
     onUseEarliest: () -> Unit,
     onStart: () -> Unit,
     onFinish: () -> Unit,
+    paused: Boolean = false,
+    onPause: () -> Unit = {},
+    onResume: () -> Unit = {},
 ) {
     val colors = MaterialTheme.colorScheme
     Surface(shape = MaterialTheme.shapes.extraLarge, color = colors.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
@@ -399,14 +548,38 @@ private fun ReadyCard(
             Spacer(Modifier.height(10.dp))
             if (started) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.NotificationsActive, null, tint = colors.primary, modifier = Modifier.size(18.dp))
+                    Icon(
+                        if (paused) Icons.Filled.Pause else Icons.Filled.NotificationsActive, null,
+                        tint = if (paused) colors.tertiary else colors.primary, modifier = Modifier.size(18.dp),
+                    )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        nextReminder?.let { "Next reminder: $it" } ?: "Reminders are on",
+                        when {
+                            paused -> "Paused. Reminders are off and the ready time moves back until you resume."
+                            else -> nextReminder?.let { "Next reminder: $it" } ?: "Reminders are on"
+                        },
                         style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f),
                     )
-                    TextButton(onClick = onFinish) { Text("Finish") }
+                }
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (paused) {
+                        Button(onClick = onResume, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Filled.PlayArrow, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Resume")
+                        }
+                    } else {
+                        FilledTonalButton(onClick = onPause, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Filled.Pause, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Pause")
+                        }
+                    }
+                    OutlinedButton(onClick = onFinish, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.Stop, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Stop")
+                    }
                 }
             } else {
                 Button(onClick = onStart, enabled = canStart, modifier = Modifier.fillMaxWidth()) { Text("Start this meal") }
@@ -432,9 +605,23 @@ private fun dayNote(at: Long, now: Long, zone: ZoneId): String {
 }
 
 @Composable
-private fun RecipeLine(r: MealRecipeView, startAt: Long?, totalSeconds: Long?, timesKnown: Boolean?, zone: ZoneId) {
+private fun RecipeLine(
+    r: MealRecipeView,
+    startAt: Long?,
+    totalSeconds: Long?,
+    timesKnown: Boolean?,
+    zone: ZoneId,
+    open: Boolean = false,
+    onToggle: (() -> Unit)? = null,
+) {
     val colors = MaterialTheme.colorScheme
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 4.dp)) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .then(if (onToggle != null) Modifier.clickable(onClick = onToggle) else Modifier)
+            .heightIn(min = 40.dp)
+            .padding(horizontal = 4.dp),
+    ) {
         Box(Modifier.size(10.dp).background(r.color, CircleShape))
         Spacer(Modifier.width(10.dp))
         Text(r.name, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
@@ -448,18 +635,67 @@ private fun RecipeLine(r: MealRecipeView, startAt: Long?, totalSeconds: Long?, t
             style = MaterialTheme.typography.labelMedium,
             color = if (r.detail == null || timesKnown == false) colors.tertiary else colors.onSurfaceVariant,
         )
+        if (onToggle != null) {
+            Icon(
+                if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                contentDescription = if (open) "Hide ingredients" else "Show ingredients",
+                tint = colors.onSurfaceVariant,
+                modifier = Modifier.padding(start = 6.dp).size(22.dp),
+            )
+        }
+    }
+}
+
+/** One dish's whole ingredient list, opened from its name at the top of the meal. */
+@Composable
+private fun DishIngredients(recipe: MealRecipeView, checked: Set<Int>, onToggle: (Int) -> Unit) {
+    val detail = recipe.detail ?: return
+    val colors = MaterialTheme.colorScheme
+    Surface(shape = MaterialTheme.shapes.large, color = colors.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.height(IntrinsicSize.Min)) {
+            Box(Modifier.width(5.dp).fillMaxHeight().background(recipe.color))
+            Column(Modifier.padding(vertical = 6.dp).weight(1f)) {
+                detail.recipeIngredient.forEachIndexed { i, ing ->
+                    // Mealie's section headings ("For the glaze") sit on the line below them.
+                    ing.title?.takeIf { it.isNotBlank() }?.let {
+                        Text(it, style = MaterialTheme.typography.titleSmall, color = colors.primary, modifier = Modifier.padding(start = 14.dp, top = 8.dp))
+                    }
+                    if (isHeadingOnly(ing)) return@forEachIndexed
+                    val text = ingredientText(ing)
+                    val done = i in checked
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 40.dp).clickable { onToggle(i) }.padding(horizontal = 14.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(checked = done, onCheckedChange = { onToggle(i) }, modifier = Modifier.size(24.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            text,
+                            style = MaterialTheme.typography.bodyLarge,
+                            textDecoration = if (done) TextDecoration.LineThrough else null,
+                            color = if (done) colors.outline else colors.onSurface,
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
 @Composable
-private fun StepCard(recipe: MealRecipeView, stepIndex: Int, onStartTimer: (MealRecipeView, String, Long) -> Unit) {
+private fun StepCard(
+    recipe: MealRecipeView,
+    stepIndex: Int,
+    checked: Set<Int>,
+    onToggle: (Int) -> Unit,
+    onStartTimer: (MealRecipeView, String, Long) -> Unit,
+) {
     val colors = MaterialTheme.colorScheme
     val detail = recipe.detail ?: return
     val step = detail.recipeInstructions.getOrNull(stepIndex) ?: return
     val perStep = remember(detail) { stepIngredientsFor(detail) }
     val firstUse = remember(perStep) { firstSteps(perStep) }
     val used = perStep.getOrNull(stepIndex).orEmpty()
-    var checked by remember(detail.id) { mutableStateOf(setOf<Int>()) }
     Surface(shape = MaterialTheme.shapes.large, color = colors.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.height(IntrinsicSize.Min)) {
             Box(Modifier.width(5.dp).fillMaxHeight().background(recipe.color))
@@ -477,7 +713,7 @@ private fun StepCard(recipe: MealRecipeView, stepIndex: Int, onStartTimer: (Meal
                     StepIngredients(
                         lines = stepIngredientRows(detail, used, stepIndex, firstUse),
                         checked = checked,
-                        onToggle = { i -> checked = if (i in checked) checked - i else checked + i },
+                        onToggle = onToggle,
                     )
                 }
                 val found = remember(step.text, step.durationSeconds) { stepTimers(step.text, step.durationSeconds) }
@@ -528,13 +764,14 @@ fun MealInProgressBar(session: MealSession, onOpen: () -> Unit, modifier: Modifi
     val now by produceState(System.currentTimeMillis()) {
         while (true) { delay(30_000); value = System.currentTimeMillis() }
     }
-    val next = session.reminders.firstOrNull { it.at > now }
+    val next = if (session.pausedAt != null) null else session.reminders.firstOrNull { it.at > now }
     Surface(color = colors.primaryContainer, modifier = modifier.fillMaxWidth().clickable(onClick = onOpen)) {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.NotificationsActive, null, tint = colors.onPrimaryContainer, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text(session.title + " · ready " + clockText(session.readyAt), style = MaterialTheme.typography.titleSmall, color = colors.onPrimaryContainer)
+                Text(session.title + " · ready " + clockText(session.readyAtNow(now)), style = MaterialTheme.typography.titleSmall, color = colors.onPrimaryContainer)
+                if (session.pausedAt != null) Text("Paused", style = MaterialTheme.typography.bodySmall, color = colors.onPrimaryContainer)
                 next?.let { Text("Next: ${it.title}", style = MaterialTheme.typography.bodySmall, color = colors.onPrimaryContainer) }
             }
             Text("Open", style = MaterialTheme.typography.labelLarge, color = colors.primary)
