@@ -104,7 +104,7 @@ class ScreenshotTest {
     /** Shopping Day: Weekly groceries and Household merged, each item tagged with its list. */
     @Test fun shoppingDay() = phone(tab = 0) { ShoppingDay() }
 
-    @Test fun recipes() = phone(tab = 1) { RecipeGrid(Sample.recipes, null, null, {}, actions = { SyncIcon() }, today = Sample.today) }
+    @Test fun recipes() = phone(tab = 1) { RecipeGrid(Sample.recipes, null, null, {}, actions = { SyncIcon() }, today = Sample.today, onAdd = {}) }
 
     @Test fun recipesSides() = phone(tab = 1) {
         RecipeGrid(Sample.recipes, null, null, {}, actions = { SyncIcon() }, today = Sample.today, initialChapter = "Sides")
@@ -360,7 +360,7 @@ class ScreenshotTest {
     }
 
     /** Tablet: the whole cookbook full width, in chapter sections. */
-    @Test fun tabletRecipes() = tablet { RecipeGrid(Sample.recipes, null, null, {}, actions = { SyncIcon() }, today = Sample.today) }
+    @Test fun tabletRecipes() = tablet { RecipeGrid(Sample.recipes, null, null, {}, actions = { SyncIcon() }, today = Sample.today, onAdd = {}) }
 
     /** Tablet: a recipe opened full screen, with a back arrow. */
     @Test fun tabletRecipeDetail() = tablet { Detail(cookMode = false) }

@@ -53,7 +53,7 @@ your own Mealie server.
 - **Servings scaler.** Scales every amount, including ones Mealie hasn't parsed.
 - **Nutrition.** Mealie's per-serving values, in a section that expands when tapped.
 - **Recipe photos.** Take one with the camera or pick one from the gallery.
-- **Add recipes from a link or a photo.** Tap **+** in the cookbook and paste a recipe page's link,
+- **Add recipes from a link or a photo.** Tap the **+** button in the cookbook's bottom corner and paste a recipe page's link,
   or share a page to YesChef from your browser. Mealie imports it and the recipe opens. If Mealie
   has an AI provider set up (group settings, AI), the AI reads pages Mealie's own reader can't, and
   **From a photo** appears: snap a cookbook page or recipe card (or pick up to 4 photos) and the AI
