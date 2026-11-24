@@ -161,9 +161,9 @@ fun RolledCard(recipe: RecipeEntity, serverUrl: String?, today: LocalDate, onOpe
         modifier = Modifier.fillMaxWidth(),
     ) {
         RecipeImage(serverUrl, recipe.id, Modifier.fillMaxWidth().aspectRatio(16f / 10f))
-        Column(Modifier.padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(Modifier.fillMaxWidth().padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                "Tonight's roll",
+                "The dice says",
                 style = MaterialTheme.typography.labelLarge,
                 color = colors.tertiary,
             )
