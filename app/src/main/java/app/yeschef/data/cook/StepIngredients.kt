@@ -143,3 +143,13 @@ private val IGNORED = setOf(
     "finely", "roughly", "thinly", "coarsely", "lightly", "packed", "heaping", "level", "room", "temperature",
     "boneless", "skinless", "cooked", "uncooked", "raw", "x", "-", "/",
 )
+
+/**
+ * For each ingredient, the first step that uses it. Later steps show it by name only
+ * ("Steak, from step 2"), so the amount isn't listed as if it were added again.
+ */
+fun firstSteps(perStep: List<List<Int>>): Map<Int, Int> {
+    val first = mutableMapOf<Int, Int>()
+    perStep.forEachIndexed { step, used -> used.forEach { first.putIfAbsent(it, step) } }
+    return first
+}

@@ -2,6 +2,7 @@ package app.yeschef
 
 import app.yeschef.data.cook.IngredientLine
 import app.yeschef.data.cook.StepLine
+import app.yeschef.data.cook.firstSteps
 import app.yeschef.data.cook.ingredientsForSteps
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -119,5 +120,11 @@ class StepIngredientsTest {
         val ings = listOf(line("1 tsp salt"), line("1 tbsp kosher salt"))
         val result = ingredientsForSteps(ings, listOf(step("Season with salt."), step("Rub with the kosher salt.")))
         assertEquals(listOf(listOf(0), listOf(1)), result)
+    }
+
+    // Griddle steak fajitas: the steak's amount shows once, on the first step that uses it.
+    @Test fun firstStepPerIngredient() {
+        val perStep = listOf(listOf(1), listOf(0, 1), emptyList(), listOf(0, 2))
+        assertEquals(mapOf(1 to 0, 0 to 1, 2 to 3), firstSteps(perStep))
     }
 }

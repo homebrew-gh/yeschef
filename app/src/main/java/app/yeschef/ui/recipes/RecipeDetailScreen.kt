@@ -121,6 +121,7 @@ import app.yeschef.data.cook.detectDurations
 import app.yeschef.data.cook.formatShort
 import app.yeschef.data.cook.IngredientLine
 import app.yeschef.data.cook.StepLine
+import app.yeschef.data.cook.firstSteps
 import app.yeschef.data.cook.ingredientsForSteps
 import app.yeschef.data.cook.timerStepLabel
 import app.yeschef.data.remote.IngredientDto
@@ -560,6 +561,7 @@ fun RecipeDetailContent(
             return@Scaffold
         }
         val stepIngredients = remember(detail, cookMode) { if (cookMode) stepIngredientsFor(detail) else emptyList() }
+        val firstUse = remember(stepIngredients) { firstSteps(stepIngredients) }
         // On the tablet the recipe keeps a readable width, centred.
         LazyColumn(
             Modifier.padding(padding).fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = 860.dp),
@@ -714,7 +716,7 @@ fun RecipeDetailContent(
                             Text(step.text, style = bodyStyle)
                             stepIngredients.getOrNull(index)?.takeIf { it.isNotEmpty() }?.let { used ->
                                 StepIngredients(
-                                    lines = used.map { i -> i to scaleIngredient(ingredientText(detail.recipeIngredient[i]), scale) },
+                                    lines = stepIngredientRows(detail, used, index, firstUse) { scaleIngredient(it, scale) },
                                     checked = checkedIngredients,
                                     onToggle = { i -> checkedIngredients = if (i in checkedIngredients) checkedIngredients - i else checkedIngredients + i },
                                 )
@@ -916,9 +918,40 @@ private fun NutritionCard(rows: List<Pair<String, String>>, modifier: Modifier =
     }
 }
 
+/**
+ * One line under a step in cook mode. [fromStep] is set when an earlier step already
+ * used the ingredient: the line then shows just its name, muted, with that step.
+ */
+internal data class StepIngredientRow(val index: Int, val text: String, val fromStep: Int? = null)
+
+/** The rows for step [step]: the full line where an ingredient is first used, its name after that. */
+internal fun stepIngredientRows(
+    detail: RecipeDetailDto,
+    used: List<Int>,
+    step: Int,
+    firstSteps: Map<Int, Int>,
+    scale: (String) -> String = { it },
+): List<StepIngredientRow> = used.map { i ->
+    val ing = detail.recipeIngredient[i]
+    val first = firstSteps[i]
+    if (first != null && first < step) {
+        val name = ing.food?.name?.takeIf { it.isNotBlank() }
+            ?: ingredientText(ing).replace(LEADING_AMOUNT, "").ifBlank { ingredientText(ing) }
+        StepIngredientRow(i, name.replaceFirstChar { it.uppercase() }, fromStep = first)
+    } else {
+        StepIngredientRow(i, scale(ingredientText(ing)))
+    }
+}
+
+/** "1 1/2 lb ", "24 oz ", "2 cups " at the start of a line that Mealie didn't parse. */
+private val LEADING_AMOUNT = Regex(
+    "^[\\d\\s/.½¼¾⅓⅔⅛-]+(?:\\([^)]*\\)\\s*)?(?:(?:cups?|tbsp|tsp|tablespoons?|teaspoons?|oz|ounces?|lbs?|pounds?|g|grams?|kg|ml|l|cans?|cloves?|pinch(?:es)?)\\b\\s*)?",
+    RegexOption.IGNORE_CASE,
+)
+
 /** In cook mode, the ingredients a step uses, shown right under it with their amounts. */
 @Composable
-internal fun StepIngredients(lines: List<Pair<Int, String>>, checked: Set<Int>, onToggle: (Int) -> Unit) {
+internal fun StepIngredients(lines: List<StepIngredientRow>, checked: Set<Int>, onToggle: (Int) -> Unit) {
     val colors = MaterialTheme.colorScheme
     Surface(
         shape = MaterialTheme.shapes.medium,
@@ -932,10 +965,25 @@ internal fun StepIngredients(lines: List<Pair<Int, String>>, checked: Set<Int>, 
                 style = MaterialTheme.typography.labelSmall,
                 color = colors.tertiary,
             )
-            lines.forEach { (index, text) ->
-                val done = index in checked
+            lines.forEach { row ->
+                if (row.fromStep != null) {
+                    // Already measured out for an earlier step: no amount, no checkbox.
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 36.dp).padding(horizontal = 14.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Spacer(Modifier.width(30.dp))
+                        Text(
+                            "${row.text}, from step ${row.fromStep + 1}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = colors.onSurfaceVariant,
+                        )
+                    }
+                    return@forEach
+                }
+                val done = row.index in checked
                 Row(
-                    Modifier.fillMaxWidth().heightIn(min = 40.dp).clickable { onToggle(index) }.padding(horizontal = 14.dp, vertical = 4.dp),
+                    Modifier.fillMaxWidth().heightIn(min = 40.dp).clickable { onToggle(row.index) }.padding(horizontal = 14.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Box(
@@ -948,7 +996,7 @@ internal fun StepIngredients(lines: List<Pair<Int, String>>, checked: Set<Int>, 
                     }
                     Spacer(Modifier.width(12.dp))
                     Text(
-                        text,
+                        row.text,
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
                         textDecoration = if (done) TextDecoration.LineThrough else null,
