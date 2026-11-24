@@ -116,8 +116,8 @@ import app.yeschef.ui.SectionLabel
 import app.yeschef.ui.YcTopBar
 import app.yeschef.ui.isWide
 import app.yeschef.ui.cook.CustomTimerDialog
-import app.yeschef.ui.cook.UnitConverterSheet
-import app.yeschef.ui.cook.rememberUnitConverterState
+import app.yeschef.ui.cook.KitchenToolsSheet
+import app.yeschef.ui.cook.rememberKitchenToolsState
 import app.yeschef.ui.cook.TimerChip
 import app.yeschef.ui.cook.rememberTimerStarter
 
@@ -311,8 +311,8 @@ fun RecipeDetailScreen(
         }
     }
 
-    val converter = rememberUnitConverterState()
-    UnitConverterSheet(converter)
+    val kitchenTools = rememberKitchenToolsState()
+    KitchenToolsSheet(kitchenTools)
 
     RecipeDetailContent(
         title = recipeName,
@@ -333,7 +333,7 @@ fun RecipeDetailScreen(
         onBack = onBack,
         onCustomTimer = { showCustomTimer = true },
         onStartTimer = { label, seconds -> startTimer(label, seconds, slug, recipeName) },
-        onConvertUnits = { converter.open = true },
+        onKitchenTools = { kitchenTools.open = true },
         photoUploading = uploading,
         onTakePhoto = {
             val uri = newCameraUri(context)
@@ -371,7 +371,7 @@ fun RecipeDetailContent(
     initialServings: Double? = null,
     onCustomTimer: () -> Unit,
     onStartTimer: (label: String, seconds: Long) -> Unit,
-    onConvertUnits: (() -> Unit)? = null,
+    onKitchenTools: (() -> Unit)? = null,
     photoUploading: Boolean = false,
     onTakePhoto: (() -> Unit)? = null,
     onPickPhoto: (() -> Unit)? = null,
@@ -402,8 +402,8 @@ fun RecipeDetailContent(
                     if (onEditTags != null && !cookMode) {
                         IconButton(onClick = onEditTags) { Icon(Icons.AutoMirrored.Filled.Label, "Edit chapter and tags") }
                     }
-                    if (onConvertUnits != null) {
-                        IconButton(onClick = onConvertUnits) { Icon(Icons.Filled.Scale, "Unit converter") }
+                    if (onKitchenTools != null) {
+                        IconButton(onClick = onKitchenTools) { Icon(Icons.Filled.Scale, "Kitchen tools: converter and reference") }
                     }
                     IconButton(onClick = onCustomTimer) { Icon(Icons.Filled.Timer, "New timer") }
                     FilterChip(
