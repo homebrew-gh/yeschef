@@ -1,5 +1,6 @@
 package app.yeschef.ui
 
+import android.provider.Settings
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
@@ -26,6 +27,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yeschef.AppContainer
 import app.yeschef.data.SyncState
 import app.yeschef.data.sync.SyncScheduler
+
+/** True when animations are turned off on the phone (Settings > Accessibility > Remove animations). */
+@Composable
+fun rememberReduceMotion(): Boolean {
+    val context = LocalContext.current
+    return remember {
+        Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+    }
+}
 
 /** Two panes side by side on the Pixel Tablet (and unfolded/landscape phones). */
 @Composable

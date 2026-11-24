@@ -1,6 +1,5 @@
 package app.yeschef.ui.recipes
 
-import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -42,7 +41,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -52,6 +50,7 @@ import androidx.compose.ui.window.DialogProperties
 import app.yeschef.data.Cookbook
 import app.yeschef.data.local.RecipeEntity
 import app.yeschef.ui.RecipeImage
+import app.yeschef.ui.rememberReduceMotion
 import java.time.LocalDate
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -76,10 +75,7 @@ fun DiceRollDialog(
     onRollAgain: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val context = LocalContext.current
-    val reduceMotion = remember {
-        Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
-    }
+    val reduceMotion = rememberReduceMotion()
     val haptics = LocalHapticFeedback.current
     var face by remember { mutableIntStateOf(Random.nextInt(1, 7)) }
     var landed by remember(roll) { mutableStateOf(reduceMotion) }

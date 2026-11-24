@@ -121,6 +121,17 @@ class ScreenshotTest {
         }
     }
 
+    /** The "Let's cook!" scenes that play as cook mode starts, caught mid-move. */
+    @Test fun cookIntroWok() = cookIntro("wok", 0.25f)
+    @Test fun cookIntroChop() = cookIntro("chop", 0.45f)
+    @Test fun cookIntroSteam() = cookIntro("steam", 0.5f)
+
+    private fun cookIntro(name: String, progress: Float) = phone(tab = 1) {
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)), contentAlignment = Alignment.Center) {
+            app.yeschef.ui.cook.CookIntroCard(app.yeschef.ui.cook.CookIntros.named(name), progress)
+        }
+    }
+
     @Test fun recipeDetail() = phone(tab = 1) { Detail(cookMode = false) }
 
     @Test fun recipeCookMode() = phone(tab = 1, dark = true) { Detail(cookMode = true) }
