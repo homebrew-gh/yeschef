@@ -29,12 +29,15 @@ import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
 import app.yeschef.data.ShoppingRow
 import app.yeschef.data.cook.CookTimer
+import app.yeschef.data.cook.Densities
+import app.yeschef.data.cook.KitchenUnit
 import app.yeschef.data.local.MealPlanEntity
 import app.yeschef.data.local.RecipeEntity
 import app.yeschef.data.remote.IngredientDto
 import app.yeschef.data.remote.RecipeDetailDto
 import app.yeschef.data.remote.StepDto
 import app.yeschef.ui.cook.TimerTrayContent
+import app.yeschef.ui.cook.UnitConverterContent
 import app.yeschef.ui.mealplan.AddToPlanContent
 import app.yeschef.ui.mealplan.MealPlanContent
 import app.yeschef.ui.mealplan.MoveMealContent
@@ -52,6 +55,8 @@ import app.yeschef.data.Cookbook
 import app.yeschef.ui.recipes.TagEditorContent
 import app.yeschef.ui.recipes.RecipeEditorContent
 import app.yeschef.ui.recipes.AddToListContent
+import app.yeschef.ui.recipes.AddRecipeContent
+import app.yeschef.data.AiStatus
 import app.yeschef.data.RecipeDraft
 import app.yeschef.data.cook.buildMealTimeline
 import app.yeschef.ui.cook.CookMealContent
@@ -192,12 +197,40 @@ class ScreenshotTest {
         )
     }
 
+    /** The cookbook's + button, with Mealie's AI set up for images. */
+    @Test fun addRecipeSheet() = sheet {
+        AddRecipeContent(
+            url = "https://www.example.com/recipes/white-chicken-chili", onUrlChange = {},
+            ai = AiStatus(enabled = true, images = true), stage = null, error = null,
+            onImportLink = {}, onTakePhoto = {}, onPickPhotos = {}, onCancel = {},
+        )
+    }
+
+    /** Without AI in Mealie: links only, and a note on how to get photos. */
+    @Test fun addRecipeSheetNoAi() = sheet {
+        AddRecipeContent(
+            url = "", onUrlChange = {}, ai = AiStatus.Off, stage = null, error = null,
+            onImportLink = {}, onTakePhoto = {}, onPickPhotos = {}, onCancel = {},
+        )
+    }
+
     @Test fun swapDaySheet() = sheet { SwapDayContent(Sample.today.plusDays(1), Sample.today, {}, {}) }
 
     @Test fun addToPlanSheet() {
         paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_6.copy(screenHeight = 2600))
         sheet {
             AddToPlanContent(Sample.recipes, Sample.today, Sample.today.plusDays(2), { _, _, _ -> }, {}, initialPicked = listOf("miso-glazed-salmon", "herb-rice-pilaf"))
+        }
+    }
+
+    /** Cook mode's unit converter: 2 cups of flour in every other unit. */
+    @Test fun unitConverter() {
+        paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_6.copy(screenHeight = 2600))
+        sheet {
+            UnitConverterContent(
+                amount = "2", onAmount = {}, from = KitchenUnit.CUP, onFrom = {},
+                density = Densities.first { it.name == "All-purpose flour" }, onDensity = {},
+            )
         }
     }
 

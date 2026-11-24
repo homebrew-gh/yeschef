@@ -79,6 +79,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Scale
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material3.FilterChip
@@ -121,6 +122,8 @@ import app.yeschef.ui.SectionLabel
 import app.yeschef.ui.YcTopBar
 import app.yeschef.ui.isWide
 import app.yeschef.ui.cook.CustomTimerDialog
+import app.yeschef.ui.cook.UnitConverterSheet
+import app.yeschef.ui.cook.rememberUnitConverterState
 import app.yeschef.ui.cook.TimerChip
 import app.yeschef.ui.cook.rememberTimerStarter
 
@@ -325,6 +328,9 @@ fun RecipeDetailScreen(
         }
     }
 
+    val converter = rememberUnitConverterState()
+    UnitConverterSheet(converter)
+
     RecipeDetailContent(
         title = recipeName,
         onShare = if (detail != null) share else null,
@@ -345,6 +351,7 @@ fun RecipeDetailScreen(
         onBack = onBack,
         onCustomTimer = { showCustomTimer = true },
         onStartTimer = { label, seconds -> startTimer(label, seconds, slug, recipeName) },
+        onConvertUnits = { converter.open = true },
         photoUploading = uploading,
         onTakePhoto = {
             val uri = newCameraUri(context)
@@ -383,6 +390,7 @@ fun RecipeDetailContent(
     initialServings: Double? = null,
     onCustomTimer: () -> Unit,
     onStartTimer: (label: String, seconds: Long) -> Unit,
+    onConvertUnits: (() -> Unit)? = null,
     photoUploading: Boolean = false,
     onTakePhoto: (() -> Unit)? = null,
     onPickPhoto: (() -> Unit)? = null,
@@ -413,8 +421,8 @@ fun RecipeDetailContent(
                     if (onEditTags != null && !cookMode) {
                         IconButton(onClick = onEditTags) { Icon(Icons.AutoMirrored.Filled.Label, "Edit chapter and tags") }
                     }
-                    if (onShare != null && !cookMode) {
-                        ShareMenu(onShare = { onShare(it, scale) })
+                    if (onConvertUnits != null) {
+                        IconButton(onClick = onConvertUnits) { Icon(Icons.Filled.Scale, "Unit converter") }
                     }
                     IconButton(onClick = onCustomTimer) { Icon(Icons.Filled.Timer, "New timer") }
                     FilterChip(
@@ -507,7 +515,7 @@ fun RecipeDetailContent(
                 }
             }
 
-            if ((onCookWithSides != null || onAddToList != null) && !cookMode) {
+            if ((onCookWithSides != null || onAddToList != null || onShare != null) && !cookMode) {
                 item {
                     FlowRow(Modifier.padding(start = 8.dp, top = 4.dp, end = 8.dp)) {
                         if (onAddToList != null) {
@@ -524,6 +532,7 @@ fun RecipeDetailContent(
                                 Text("Add a side and cook together")
                             }
                         }
+                        if (onShare != null) ShareMenu(onShare = { onShare(it, scale) })
                     }
                 }
             }
@@ -610,7 +619,11 @@ fun RecipeDetailContent(
 private fun ShareMenu(onShare: (ShareKind) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
-        IconButton(onClick = { open = true }) { Icon(Icons.Filled.Share, "Share or print") }
+        TextButton(onClick = { open = true }) {
+            Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Share or print")
+        }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             DropdownMenuItem(
                 text = { Text("Share as text") },

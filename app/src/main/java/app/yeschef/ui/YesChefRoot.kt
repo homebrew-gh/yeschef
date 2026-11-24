@@ -65,6 +65,15 @@ fun YesChefRoot(container: AppContainer) {
         }
     }
 
+    // A link shared from another app goes to the cookbook's "Add a recipe" sheet.
+    val sharedLink by container.sharedLink.collectAsStateWithLifecycle()
+    LaunchedEffect(sharedLink) {
+        if (sharedLink != null) {
+            tab = Tab.Recipes
+            mealCode = null
+        }
+    }
+
     NavigationSuiteScaffold(
         navigationSuiteItems = {
             Tab.entries.forEach { t ->

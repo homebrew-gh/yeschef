@@ -53,6 +53,7 @@ sealed interface SyncState {
 class Repository(
     private val db: YesChefDb,
     private val apiProvider: () -> MealieApi?,
+    private val importApiProvider: () -> MealieApi? = apiProvider,
 ) {
     private val syncMutex = Mutex()
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
@@ -415,6 +416,45 @@ class Repository(
         val response = api.uploadRecipeImage(slug, part, "jpg".toRequestBody("text/plain".toMediaType()))
         runCatching { cacheDetail(api, slug) }
         return response.image ?: System.currentTimeMillis().toString()
+    }
+
+    // ---- Adding recipes (needs the server) ----
+
+    /** Whether Mealie has an AI provider set up, and one for images. Off when it can't be read. */
+    suspend fun aiStatus(): AiStatus {
+        val api = apiProvider() ?: return AiStatus.Off
+        return runCatching { AiStatus.from(api.groupSelf()) }.getOrDefault(AiStatus.Off)
+    }
+
+    /**
+     * Imports a recipe page into Mealie and syncs it down; returns the new recipe's slug.
+     * When Mealie's own reader can't find a recipe on the page and [aiFallback] is set, the
+     * group's AI reads the page instead ([onStage] is told, so the UI can say so).
+     */
+    suspend fun importFromUrl(url: String, aiFallback: Boolean, onStage: (ImportStage) -> Unit = {}): String {
+        val api = importApiProvider() ?: throw IOException("Not connected to a server")
+        onStage(ImportStage.ReadingPage)
+        val slug = try {
+            api.createRecipeFromUrl(RecipeImport.urlBody(url)).use { RecipeImport.slugOf(it.string()) }
+        } catch (e: HttpException) {
+            if (!aiFallback || e.code() != 400) throw e
+            onStage(ImportStage.AiReadingPage)
+            api.createRecipeWithAi(listOf(MultipartBody.Part.createFormData("url", url)))
+                .use { RecipeImport.slugOf(it.string()) }
+        }
+        sync()
+        return slug
+    }
+
+    /** Has the group's AI write up a recipe from photos (JPEG bytes) of it; returns the slug. */
+    suspend fun importFromPhotos(jpegs: List<ByteArray>): String {
+        val api = importApiProvider() ?: throw IOException("Not connected to a server")
+        val parts = jpegs.mapIndexed { i, bytes ->
+            MultipartBody.Part.createFormData("images", "page-${i + 1}.jpg", bytes.toRequestBody("image/jpeg".toMediaType()))
+        }
+        val slug = api.createRecipeWithAi(parts).use { RecipeImport.slugOf(it.string()) }
+        sync()
+        return slug
     }
 
     private suspend fun cacheDetail(api: MealieApi, slug: String) {

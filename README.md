@@ -36,19 +36,27 @@ your own Mealie server.
   quickest or "not made in a while", or let the dice pick something.
 - **Cook mode.** Large text, screen stays awake, and each step shows the ingredients it needs
   ("You'll need"). When you finish, YesChef offers to mark the recipe as cooked.
+- **Unit converter.** The scale button in a recipe, cook mode and whole-meal cook mode opens a
+  converter over the page: cups, spoons, fl oz, pints, quarts, gallons, ml, l, g, kg, oz and lb.
 - **Timers.** Times in the steps ("bake 25 minutes", "10-12 min") become chips you tap to start a
   timer, labelled with the step and recipe. Run several at once from the tray or the notification.
   A finished timer rings with your alarm sound, even when the app is closed.
 - **Servings scaler.** Scales every amount, including ones Mealie hasn't parsed.
 - **Nutrition.** Mealie's per-serving values, in a section that expands when tapped.
 - **Recipe photos.** Take one with the camera or pick one from the gallery.
+- **Add recipes from a link or a photo.** Tap **+** in the cookbook and paste a recipe page's link,
+  or share a page to YesChef from your browser. Mealie imports it and the recipe opens. If Mealie
+  has an AI provider set up (group settings, AI), the AI reads pages Mealie's own reader can't, and
+  **From a photo** appears: snap a cookbook page or recipe card (or pick up to 4 photos) and the AI
+  writes it up. The photo option needs an image provider in Mealie's AI settings. Imports need the
+  server, so they don't work offline.
 - **Edit recipes by hand.** Change the name, description, servings, prep/cook/total times,
   ingredients (add, remove, reorder, one per line, amount first) and steps. Works offline; Mealie
   re-reads new and changed ingredient lines when the edit syncs, so they still scale and go on the
   shopping list properly. Leave a time blank if you don't know it; cook time 0 means no cooking.
 - **Add any recipe to any grocery list.** Pick the list (or make a new one), choose the servings and
   untick what you already have. Works offline; Mealie scales and merges the lines on the next sync.
-- **Share or print any recipe.** The share button on a recipe sends it as text (messages, email,
+- **Share or print any recipe.** The **Share or print** button under a recipe's times sends it as text (messages, email,
   notes) or as a PDF, or opens Android's print dialog (which can also save a PDF). Amounts match the
   servings you've picked.
 - **Meal plan.** The next three weeks; planned recipes are downloaded ahead so they open offline.
@@ -155,6 +163,10 @@ table above into your assistant's instructions and give it access to Mealie's AP
 ## Scaling and nutrition
 
 The **Serves** control next to Ingredients scales every amount, including the "You'll need" boxes in cook mode. It changes the number at the start of each ingredient line ("1 1/2 lb" becomes "2¼ lb"), so ingredients Mealie hasn't parsed scale too. Lines with no amount, like "salt to taste", are left as they are. Recipes without a serving count get a ×½ to ×4 multiplier instead. **Nutrition** shows Mealie's per-serving values in a small section that expands when tapped.
+
+## Unit converter
+
+The scale button at the top of a recipe (also in cook mode) and of whole-meal cook mode opens the converter in a sheet, so you don't lose your place. Type an amount, pick its unit, and it shows that amount in every other unit. Volumes are US measures (1 cup = 236.6 ml, 16 tbsp). Weight and volume only convert into each other once you pick an ingredient, because a cup of flour (125 g) weighs far less than a cup of sugar (200 g). The built-in list covers common ingredients (water, milk, oil, butter, honey, flours, sugars, cocoa, cornstarch, rice, oats, table salt) at typical weights for a level cup, so treat those as good to a few percent. Everything works offline. The list is in `data/cook/UnitConversion.kt` if you want to add an ingredient.
 
 ## How sync works
 
