@@ -1,5 +1,12 @@
 package app.yeschef.ui.cook
 
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material3.Checkbox
+import androidx.compose.ui.text.style.TextDecoration
+import app.yeschef.data.isHeadingOnly
+import app.yeschef.ui.recipes.ingredientText
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -274,9 +281,17 @@ fun CookMealContent(
     onStartTimer: (MealRecipeView, String, Long) -> Unit,
     onKitchenTools: (() -> Unit)? = null,
     zone: ZoneId = ZoneId.systemDefault(),
+    openDishes: Set<String> = emptySet(),
 ) {
     val colors = MaterialTheme.colorScheme
     val startAt = readyAt - timeline.leadSeconds * 1000
+    // Each dish's ingredient list opens under its name. Ticks are shared with the step cards.
+    var open by rememberSaveable { mutableStateOf(openDishes.toList()) }
+    var checked by remember { mutableStateOf(mapOf<String, Set<Int>>()) }
+    fun toggle(slug: String, i: Int) {
+        val now = checked[slug].orEmpty()
+        checked = checked + (slug to if (i in now) now - i else now + i)
+    }
     // Merged steps, bucketed by the minute they start.
     val slots = remember(timeline, readyAt) {
         timeline.steps.groupBy { (readyAt - it.startsBefore * 1000) / 60_000 * 60_000 }.toList()
@@ -328,7 +343,13 @@ fun CookMealContent(
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     recipes.forEach { r ->
                         val plan = cookable.indexOf(r).takeIf { it >= 0 }?.let { timeline.recipes.getOrNull(it) }
-                        RecipeLine(r, plan?.let { readyAt - it.startsBefore * 1000 }, plan?.totalSeconds, plan?.timesKnown, zone)
+                        val isOpen = r.slug in open
+                        RecipeLine(
+                            r, plan?.let { readyAt - it.startsBefore * 1000 }, plan?.totalSeconds, plan?.timesKnown, zone,
+                            open = isOpen,
+                            onToggle = if (r.detail != null) ({ open = if (isOpen) open - r.slug else open + r.slug }) else null,
+                        )
+                        if (isOpen) DishIngredients(r, checked[r.slug].orEmpty()) { toggle(r.slug, it) }
                     }
                 }
             }
@@ -347,7 +368,10 @@ fun CookMealContent(
                             if (at == current) Text("NOW", style = OverlineStyle, color = colors.primary)
                         }
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            steps.forEach { s -> StepCard(cookable[s.recipeIndex], s.stepIndex, onStartTimer) }
+                            steps.forEach { s ->
+                                val r = cookable[s.recipeIndex]
+                                StepCard(r, s.stepIndex, checked[r.slug].orEmpty(), { toggle(r.slug, it) }, onStartTimer)
+                            }
                         }
                     }
                 }
@@ -432,9 +456,23 @@ private fun dayNote(at: Long, now: Long, zone: ZoneId): String {
 }
 
 @Composable
-private fun RecipeLine(r: MealRecipeView, startAt: Long?, totalSeconds: Long?, timesKnown: Boolean?, zone: ZoneId) {
+private fun RecipeLine(
+    r: MealRecipeView,
+    startAt: Long?,
+    totalSeconds: Long?,
+    timesKnown: Boolean?,
+    zone: ZoneId,
+    open: Boolean = false,
+    onToggle: (() -> Unit)? = null,
+) {
     val colors = MaterialTheme.colorScheme
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 4.dp)) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .then(if (onToggle != null) Modifier.clickable(onClick = onToggle) else Modifier)
+            .heightIn(min = 40.dp)
+            .padding(horizontal = 4.dp),
+    ) {
         Box(Modifier.size(10.dp).background(r.color, CircleShape))
         Spacer(Modifier.width(10.dp))
         Text(r.name, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
@@ -448,18 +486,67 @@ private fun RecipeLine(r: MealRecipeView, startAt: Long?, totalSeconds: Long?, t
             style = MaterialTheme.typography.labelMedium,
             color = if (r.detail == null || timesKnown == false) colors.tertiary else colors.onSurfaceVariant,
         )
+        if (onToggle != null) {
+            Icon(
+                if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                contentDescription = if (open) "Hide ingredients" else "Show ingredients",
+                tint = colors.onSurfaceVariant,
+                modifier = Modifier.padding(start = 6.dp).size(22.dp),
+            )
+        }
+    }
+}
+
+/** One dish's whole ingredient list, opened from its name at the top of the meal. */
+@Composable
+private fun DishIngredients(recipe: MealRecipeView, checked: Set<Int>, onToggle: (Int) -> Unit) {
+    val detail = recipe.detail ?: return
+    val colors = MaterialTheme.colorScheme
+    Surface(shape = MaterialTheme.shapes.large, color = colors.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.height(IntrinsicSize.Min)) {
+            Box(Modifier.width(5.dp).fillMaxHeight().background(recipe.color))
+            Column(Modifier.padding(vertical = 6.dp).weight(1f)) {
+                detail.recipeIngredient.forEachIndexed { i, ing ->
+                    // Mealie's section headings ("For the glaze") sit on the line below them.
+                    ing.title?.takeIf { it.isNotBlank() }?.let {
+                        Text(it, style = MaterialTheme.typography.titleSmall, color = colors.primary, modifier = Modifier.padding(start = 14.dp, top = 8.dp))
+                    }
+                    if (isHeadingOnly(ing)) return@forEachIndexed
+                    val text = ingredientText(ing)
+                    val done = i in checked
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 40.dp).clickable { onToggle(i) }.padding(horizontal = 14.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(checked = done, onCheckedChange = { onToggle(i) }, modifier = Modifier.size(24.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            text,
+                            style = MaterialTheme.typography.bodyLarge,
+                            textDecoration = if (done) TextDecoration.LineThrough else null,
+                            color = if (done) colors.outline else colors.onSurface,
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
 @Composable
-private fun StepCard(recipe: MealRecipeView, stepIndex: Int, onStartTimer: (MealRecipeView, String, Long) -> Unit) {
+private fun StepCard(
+    recipe: MealRecipeView,
+    stepIndex: Int,
+    checked: Set<Int>,
+    onToggle: (Int) -> Unit,
+    onStartTimer: (MealRecipeView, String, Long) -> Unit,
+) {
     val colors = MaterialTheme.colorScheme
     val detail = recipe.detail ?: return
     val step = detail.recipeInstructions.getOrNull(stepIndex) ?: return
     val perStep = remember(detail) { stepIngredientsFor(detail) }
     val firstUse = remember(perStep) { firstSteps(perStep) }
     val used = perStep.getOrNull(stepIndex).orEmpty()
-    var checked by remember(detail.id) { mutableStateOf(setOf<Int>()) }
     Surface(shape = MaterialTheme.shapes.large, color = colors.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.height(IntrinsicSize.Min)) {
             Box(Modifier.width(5.dp).fillMaxHeight().background(recipe.color))
@@ -477,7 +564,7 @@ private fun StepCard(recipe: MealRecipeView, stepIndex: Int, onStartTimer: (Meal
                     StepIngredients(
                         lines = stepIngredientRows(detail, used, stepIndex, firstUse),
                         checked = checked,
-                        onToggle = { i -> checked = if (i in checked) checked - i else checked + i },
+                        onToggle = onToggle,
                     )
                 }
                 val found = remember(step.text, step.durationSeconds) { stepTimers(step.text, step.durationSeconds) }
