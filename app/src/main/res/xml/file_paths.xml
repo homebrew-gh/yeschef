@@ -2,4 +2,6 @@
 <paths>
     <!-- Photos taken with the camera for a recipe, before they're uploaded to Mealie. -->
     <cache-path name="photos" path="photos/" />
+    <!-- Recipe PDFs made for the share sheet. -->
+    <cache-path name="shared" path="shared/" />
 </paths>
