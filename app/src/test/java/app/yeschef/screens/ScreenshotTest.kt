@@ -38,6 +38,8 @@ import app.yeschef.data.remote.RecipeDetailDto
 import app.yeschef.data.remote.StepDto
 import app.yeschef.ui.cook.TimerTrayContent
 import app.yeschef.ui.cook.UnitConverterContent
+import app.yeschef.ui.cook.KitchenReferenceContent
+import app.yeschef.data.cook.RefTopic
 import app.yeschef.ui.mealplan.AddToPlanContent
 import app.yeschef.ui.mealplan.MealPlanContent
 import app.yeschef.ui.mealplan.MoveMealContent
@@ -249,6 +251,16 @@ class ScreenshotTest {
                 density = Densities.first { it.name == "All-purpose flour" }, onDensity = {},
             )
         }
+    }
+
+    @Test fun kitchenReference() {
+        paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_6.copy(screenHeight = 3000))
+        sheet { KitchenReferenceContent(RefTopic.TEMPS, onTopic = {}, wide = false) }
+    }
+
+    @Test fun tabletKitchenReference() {
+        paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_C.copy(screenHeight = 2400))
+        sheet { KitchenReferenceContent(RefTopic.SWAPS, onTopic = {}, wide = true) }
     }
 
     private fun sheet(content: @Composable () -> Unit) = paparazzi.snapshot {

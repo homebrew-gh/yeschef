@@ -43,6 +43,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
@@ -70,6 +71,9 @@ import app.yeschef.data.local.RecipeEntity
 import app.yeschef.ui.RecipeImage
 import app.yeschef.ui.SyncAction
 import app.yeschef.ui.YcTopBar
+import app.yeschef.ui.cook.KitchenTool
+import app.yeschef.ui.cook.KitchenToolsSheet
+import app.yeschef.ui.cook.rememberKitchenToolsState
 
 /** Recipe grid; on the tablet the selected recipe opens beside it. */
 @Composable
@@ -94,11 +98,16 @@ fun RecipesScreen(container: AppContainer, openSlug: String?, onOpen: (String?) 
             onImported = { slug -> adding = null; onOpen(slug) },
         )
     }
+    val kitchenTools = rememberKitchenToolsState()
+    KitchenToolsSheet(kitchenTools)
     val list: @Composable (Modifier) -> Unit = { modifier ->
         RecipeGrid(
             recipes, config?.serverUrl, openSlug, onOpen,
             actions = {
                 IconButton(onClick = { adding = "" }) { Icon(Icons.Filled.Add, contentDescription = "Add a recipe") }
+                IconButton(onClick = { kitchenTools.show(KitchenTool.REFERENCE) }) {
+                    Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = "Kitchen reference")
+                }
                 SyncAction(container)
             },
             modifier = modifier,

@@ -39,8 +39,11 @@ your own Mealie server.
 - **Cooking notes.** Tap the mic in cook mode and say what happened ("needed 10 more minutes").
   Notes are tagged with the step on screen and saved to the recipe's timeline in Mealie, ready for
   an assistant to review.
-- **Unit converter.** The scale button in a recipe, cook mode and whole-meal cook mode opens a
-  converter over the page: cups, spoons, fl oz, pints, quarts, gallons, ml, l, g, kg, oz and lb.
+- **Kitchen tools.** The scale button in a recipe, cook mode and whole-meal cook mode opens a
+  sheet over the page with a unit converter (cups, spoons, fl oz, pints, quarts, gallons, ml, l,
+  g, kg, oz and lb) and a kitchen reference: safe meat temperatures, steak doneness, oven
+  temperatures with gas marks, substitutions, measures, pan sizes, eggs and grains, and food
+  safety. The book button in the cookbook opens the reference too.
 - **Timers.** Times in the steps ("bake 25 minutes", "10-12 min") become chips you tap to start a
   timer, labelled with the step and recipe. Run several at once from the tray or the notification.
   A finished timer rings with your alarm sound, even when the app is closed.
@@ -175,9 +178,23 @@ With the [mealie-startos](https://github.com/homebrew-gh/mealie-startos) AI conn
 
 The **Serves** control next to Ingredients scales every amount, including the "You'll need" boxes in cook mode. It changes the number at the start of each ingredient line ("1 1/2 lb" becomes "2¼ lb"), so ingredients Mealie hasn't parsed scale too. Lines with no amount, like "salt to taste", are left as they are. Recipes without a serving count get a ×½ to ×4 multiplier instead. **Nutrition** shows Mealie's per-serving values in a small section that expands when tapped.
 
-## Unit converter
+## Kitchen tools: converter and reference
 
-The scale button at the top of a recipe (also in cook mode) and of whole-meal cook mode opens the converter in a sheet, so you don't lose your place. Type an amount, pick its unit, and it shows that amount in every other unit. Volumes are US measures (1 cup = 236.6 ml, 16 tbsp). Weight and volume only convert into each other once you pick an ingredient, because a cup of flour (125 g) weighs far less than a cup of sugar (200 g). The built-in list covers common ingredients (water, milk, oil, butter, honey, flours, sugars, cocoa, cornstarch, rice, oats, table salt) at typical weights for a level cup, so treat those as good to a few percent. Everything works offline. The list is in `data/cook/UnitConversion.kt` if you want to add an ingredient.
+The scale button at the top of a recipe (also in cook mode) and of whole-meal cook mode opens Kitchen tools in a sheet, so you don't lose your place. It has two tabs, and remembers which one you used last.
+
+**Converter.** Type an amount, pick its unit, and it shows that amount in every other unit. Volumes are US measures (1 cup = 236.6 ml, 16 tbsp). Weight and volume only convert into each other once you pick an ingredient, because a cup of flour (125 g) weighs far less than a cup of sugar (200 g). The built-in list covers common ingredients (water, milk, oil, butter, honey, flours, sugars, cocoa, cornstarch, rice, oats, table salt) at typical weights for a level cup, so treat those as good to a few percent. Everything works offline. The list is in `data/cook/UnitConversion.kt` if you want to add an ingredient.
+
+**Reference.** Static tables for everyday cooking, also reachable from the book button at the top of the cookbook:
+
+- **Meat temps:** USDA safe internal temperatures (with rest times), steak and roast doneness, and the higher temperatures that make thighs, pulled pork and brisket tender.
+- **Oven:** °F, °C and gas mark, with a note for fan ovens.
+- **Swaps:** common substitutions for baking, dairy and savory cooking (buttermilk, eggs, baking powder, cake flour, kosher salt and more).
+- **Measures:** US spoon and cup equivalents with millilitres, plus sticks of butter and lemon juice.
+- **Pans:** common pan sizes in inches and centimetres and how much each holds, for swapping one for another.
+- **Eggs & grains:** boiled egg times, and water and simmer times for rice, quinoa, oats, couscous and lentils.
+- **Food safety:** fridge, freezer and danger-zone temperatures, how long raw and cooked food keeps, and how to thaw.
+
+Safe temperatures, storage and thawing follow USDA guidance (FoodSafety.gov); the rest are standard cookbook figures. Celsius for meat temperatures is worked out from Fahrenheit so the two can't disagree. Tablets show the tables two to a row. Everything is offline; the tables are plain lists in `data/cook/KitchenReference.kt`.
 
 ## How sync works
 
