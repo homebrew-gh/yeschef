@@ -1,5 +1,7 @@
 package app.yeschef.screens
 
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -110,6 +112,13 @@ class ScreenshotTest {
 
     @Test fun recipesMainsSeafood() = phone(tab = 1, dark = true) {
         RecipeGrid(Sample.recipes, null, null, {}, actions = { SyncIcon() }, today = Sample.today, initialChapter = "Mains", initialProtein = "Seafood")
+    }
+
+    /** Where the dice lands: the recipe card that pops up over the cookbook. */
+    @Test fun diceRoll() = phone(tab = 1) {
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f)).padding(24.dp), contentAlignment = Alignment.Center) {
+            app.yeschef.ui.recipes.RolledCard(Sample.recipes.first(), null, Sample.today, onOpen = {}, onRollAgain = {})
+        }
     }
 
     @Test fun recipeDetail() = phone(tab = 1) { Detail(cookMode = false) }

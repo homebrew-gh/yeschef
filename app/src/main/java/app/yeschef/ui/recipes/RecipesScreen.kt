@@ -160,20 +160,37 @@ fun RecipeGrid(
         Cookbook.sections(shown, if (chapter != null && sort == Cookbook.Sort.Chapters) Cookbook.Sort.AtoZ else sort)
     }
     val colors = MaterialTheme.colorScheme
+    // The recipe the dice landed on, shown in the roll animation; the count replays it on "Roll again".
+    var rolledSlug by rememberSaveable { mutableStateOf<String?>(null) }
+    var rollCount by rememberSaveable { mutableStateOf(0) }
+    fun roll(from: String?) {
+        // Roll from the picked chapter; if the filters leave nothing there, from anything.
+        fun draw() = Cookbook.surprise(recipes, query, from, protein, today)
+            ?: Cookbook.surprise(recipes, query, null, protein, today)
+        // "Roll again" tries not to land on the same recipe twice running.
+        var pick = draw() ?: return
+        repeat(4) { if (pick.slug == rolledSlug) pick = draw() ?: pick }
+        rolledSlug = pick.slug
+        rollCount++
+    }
+    recipes.firstOrNull { it.slug == rolledSlug }?.let { rolled ->
+        DiceRollDialog(
+            rolled, rollCount, serverUrl, today,
+            onOpen = { rolledSlug = null; onOpen(rolled.slug) },
+            onRollAgain = { roll(diceChapter) },
+            onDismiss = { rolledSlug = null },
+        )
+    }
 
     Scaffold(
         topBar = {
             YcTopBar("Cookbook", actions = {
                 DiceButton(
                     recipes, query, protein, diceChapter,
-                    onRoll = {
-                        // Roll from the picked chapter; if the filters leave nothing there, from anything.
-                        (Cookbook.surprise(recipes, query, diceChapter, protein, today)
-                            ?: Cookbook.surprise(recipes, query, null, protein, today))?.let { onOpen(it.slug) }
-                    },
+                    onRoll = { roll(diceChapter) },
                     onPick = { picked ->
                         onDiceChapter(picked)
-                        Cookbook.surprise(recipes, query, picked, protein, today)?.let { onOpen(it.slug) }
+                        roll(picked)
                     },
                 )
                 actions()
