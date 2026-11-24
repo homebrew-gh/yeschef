@@ -520,9 +520,6 @@ fun RecipeDetailContent(
                     if (onEdit != null && !cookMode) {
                         IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, "Edit recipe") }
                     }
-                    if (onEditTags != null && !cookMode) {
-                        IconButton(onClick = onEditTags) { Icon(Icons.AutoMirrored.Filled.Label, "Edit chapter and tags") }
-                    }
                     if (onKitchenTools != null) {
                         IconButton(onClick = onKitchenTools) { Icon(Icons.Filled.Scale, "Kitchen tools: converter and reference") }
                     }
@@ -598,6 +595,17 @@ fun RecipeDetailContent(
                                 color = colors.tertiary,
                                 modifier = if (onEditTags != null) Modifier.clip(MaterialTheme.shapes.small).clickable(onClick = onEditTags) else Modifier,
                             )
+                        } else if (onEditTags != null && !cookMode) {
+                            // Tapping the tags edits them; with none yet, this is the way in.
+                            Spacer(Modifier.size(6.dp))
+                            Row(
+                                Modifier.clip(MaterialTheme.shapes.small).clickable(onClick = onEditTags).padding(vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.Label, contentDescription = null, tint = colors.tertiary, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Add chapter and tags", style = MaterialTheme.typography.labelLarge, color = colors.tertiary)
+                            }
                         }
                         detail.description?.takeIf { it.isNotBlank() }?.let {
                             Spacer(Modifier.size(8.dp))

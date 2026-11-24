@@ -22,6 +22,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.sp
@@ -83,7 +84,7 @@ import app.yeschef.ui.cook.rememberKitchenToolsState
 fun RecipesScreen(container: AppContainer, openSlug: String?, onOpen: (String?) -> Unit, onCookMeal: (MealRequest) -> Unit = {}) {
     val recipes by remember { container.repository.recipes() }.collectAsStateWithLifecycle(emptyList())
     val config by container.config.collectAsStateWithLifecycle()
-    // "Add a recipe" sheet, opened from the top bar or by a link shared from another app.
+    // "Add a recipe" sheet, opened from the + button or by a link shared from another app.
     var adding by rememberSaveable { mutableStateOf<String?>(null) }
     val shared by container.sharedLink.collectAsStateWithLifecycle()
     LaunchedEffect(shared) {
@@ -109,13 +110,13 @@ fun RecipesScreen(container: AppContainer, openSlug: String?, onOpen: (String?) 
         RecipeGrid(
             recipes, config?.serverUrl, openSlug, onOpen,
             actions = {
-                IconButton(onClick = { adding = "" }) { Icon(Icons.Filled.Add, contentDescription = "Add a recipe") }
                 IconButton(onClick = { kitchenTools.show(KitchenTool.REFERENCE) }) {
                     Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = "Kitchen reference")
                 }
                 SyncAction(container)
             },
             modifier = modifier,
+            onAdd = { adding = "" },
             diceChapter = diceChapter,
             onDiceChapter = { scope.launch { container.settings.saveDiceChapter(it) } },
         )
@@ -143,6 +144,8 @@ fun RecipeGrid(
     initialProtein: String? = null,
     diceChapter: String? = Cookbook.DICE_DEFAULT,
     onDiceChapter: (String?) -> Unit = {},
+    /** Shows the + (add a recipe) button in the bottom-right corner. */
+    onAdd: (() -> Unit)? = null,
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var chapter by rememberSaveable { mutableStateOf(initialChapter) }
@@ -196,12 +199,23 @@ fun RecipeGrid(
                 actions()
             })
         },
+        floatingActionButton = {
+            // Styled like cook mode's note (mic) button.
+            if (onAdd != null) {
+                FloatingActionButton(
+                    onClick = onAdd,
+                    containerColor = colors.tertiaryContainer,
+                    contentColor = colors.onTertiaryContainer,
+                ) { Icon(Icons.Filled.Add, contentDescription = "Add a recipe") }
+            }
+        },
         containerColor = colors.background,
         modifier = modifier,
     ) { padding ->
         LazyVerticalGrid(
             columns = GridCells.Adaptive(minSize = 168.dp),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+            // Room under the last row so the + button never covers a recipe.
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = if (onAdd != null) 96.dp else 24.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.padding(padding).fillMaxSize(),
