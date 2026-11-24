@@ -83,6 +83,10 @@ interface MealieApi {
     @PATCH("recipes/{slug}")
     suspend fun patchRecipe(@Path("slug") slug: String, @Body body: JsonObject): ResponseBody
 
+    /** Adds an entry to a recipe's timeline (the cook notes saved from cook mode). */
+    @POST("recipes/timeline/events")
+    suspend fun createTimelineEvent(@Body body: JsonObject): ResponseBody
+
     /** Records that the recipe was cooked ("I made this" in Mealie). */
     @PATCH("recipes/{slug}/last-made")
     suspend fun setLastMade(@Path("slug") slug: String, @Body body: LastMadeBody): ResponseBody

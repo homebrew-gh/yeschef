@@ -36,6 +36,9 @@ your own Mealie server.
   quickest or "not made in a while", or let the dice pick something.
 - **Cook mode.** Large text, screen stays awake, and each step shows the ingredients it needs
   ("You'll need"). When you finish, YesChef offers to mark the recipe as cooked.
+- **Cooking notes.** Tap the mic in cook mode and say what happened ("needed 10 more minutes").
+  Notes are tagged with the step on screen and saved to the recipe's timeline in Mealie, ready for
+  an assistant to review.
 - **Kitchen tools.** The scale button in a recipe, cook mode and whole-meal cook mode opens a
   sheet over the page with a unit converter (cups, spoons, fl oz, pints, quarts, gallons, ml, l,
   g, kg, oz and lb) and a kitchen reference: safe meat temperatures, steak doneness, oven
@@ -162,6 +165,14 @@ to Claude (or another assistant that supports MCP connectors). The connector's r
 describe this scheme, so you can just ask "sort all my recipes into chapters and tag them by
 protein", or "I made the chili last night" to set its last-cooked date. With other setups, paste the
 table above into your assistant's instructions and give it access to Mealie's API.
+
+## Cooking notes
+
+In cook mode, the mic button takes a quick spoken note with Android's own speech recognizer (on the phone, offline when your phone supports it; no server model needed). Each note records the time and the step on screen. If the phone has no speech recognizer, the button opens a box to type in instead.
+
+Notes stay on the phone, even if the app is closed, until you leave cook mode. Then YesChef shows them so you can fix, delete or add to them, and **Save to Mealie** adds them to the recipe's timeline as one "Cook notes" entry (and, if ticked, marks the recipe as cooked). Like other edits, this works offline and goes with the next sync. **Keep for later** leaves them on the phone, and the recipe page shows a button to save them.
+
+With the [mealie-startos](https://github.com/homebrew-gh/mealie-startos) AI connector, ask your assistant something like "review today's cooking notes and suggest fixes": its `list_cook_notes` tool reads them, and it can update the recipe once you agree.
 
 ## Scaling and nutrition
 

@@ -65,6 +65,8 @@ import app.yeschef.ui.cook.CookMealContent
 import app.yeschef.ui.cook.MealRecipeView
 import app.yeschef.ui.cook.mealInputs
 import app.yeschef.ui.recipes.SidePickerContent
+import app.yeschef.ui.recipes.CookNotesReviewContent
+import app.yeschef.data.cook.CookNote
 import app.yeschef.ui.theme.RecipeTagColors
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -196,6 +198,21 @@ class ScreenshotTest {
         MoveMealContent(
             title = "Lemon-garlic chicken dinner", recipeCount = 4, date = Sample.today.plusDays(1), entryType = "dinner",
             today = Sample.today, onMove = { _, _ -> }, onRemove = {}, onCancel = {},
+        )
+    }
+
+    /** Leaving cook mode with spoken notes: review them, then save to the recipe's timeline. */
+    @Test fun cookNotesReview() = sheet {
+        CookNotesReviewContent(
+            recipeName = Sample.lasagna.name,
+            notes = listOf(
+                CookNote(at = 1, text = "Used half sausage, half beef"),
+                CookNote(at = 2, text = "Sauce needed 10 more minutes to thicken", step = 1, stepLabel = "Brown the beef and onion in a large pan"),
+                CookNote(at = 3, text = "Top was getting dark, covered it with foil after 15 minutes", step = 4, stepLabel = "Bake covered at 375°F"),
+            ),
+            clock = { listOf("", "5:48 PM", "6:05 PM", "7:12 PM")[it.toInt()] },
+            markCooked = true,
+            onMarkCooked = {}, onEdit = {}, onDelete = {}, onAdd = {}, onSave = {}, onKeep = {},
         )
     }
 
@@ -428,6 +445,8 @@ private fun Detail(cookMode: Boolean, withBack: Boolean = true, servings: Double
     onStartTimer = { _, _ -> },
     onTakePhoto = {},
     onPickPhoto = {},
+    noteCount = if (cookMode) 2 else 0,
+    onAddNote = { },
 )
 
 @Composable

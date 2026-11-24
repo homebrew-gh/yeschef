@@ -95,5 +95,7 @@ data class PendingOpEntity(
         const val MEAL_DELETE = "meal_delete"
         /** Create a meal plan entry made offline: itemId is its local (negative) id. */
         const val MEAL_ADD = "meal_add"
+        /** Save cook-mode notes to a recipe's timeline: itemId is the recipe id, listId holds a TimelineNote as JSON. */
+        const val COOK_NOTES = "cook_notes"
     }
 }
