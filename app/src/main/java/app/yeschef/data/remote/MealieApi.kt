@@ -96,6 +96,22 @@ interface MealieApi {
         @Part("extension") extension: RequestBody,
     ): UpdateImageResponse
 
+    /** The user's group; its aiProviderSettings say whether Mealie has AI (and AI for images) set up. */
+    @GET("groups/self")
+    suspend fun groupSelf(): JsonObject
+
+    /** Scrapes a recipe page into a new recipe; returns its slug as a JSON string. */
+    @POST("recipes/create/url")
+    suspend fun createRecipeFromUrl(@Body body: JsonObject): ResponseBody
+
+    /**
+     * Makes a new recipe with the group's AI from a URL and/or photos (form fields "url",
+     * "images"); returns its slug as a JSON string. Mealie 3.31+.
+     */
+    @Multipart
+    @POST("recipes/create/ai")
+    suspend fun createRecipeWithAi(@Part parts: List<MultipartBody.Part>): ResponseBody
+
     @GET("households/shopping/lists")
     suspend fun shoppingLists(@Query("perPage") perPage: Int = -1): Page<ShoppingListSummaryDto>
 

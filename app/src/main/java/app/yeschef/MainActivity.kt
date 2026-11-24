@@ -10,6 +10,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.DisposableEffect
 import app.yeschef.data.ThemeMode
+import app.yeschef.data.RecipeImport
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yeschef.ui.YesChefRoot
@@ -56,8 +57,13 @@ class MainActivity : ComponentActivity() {
 }
 
 private fun MainActivity.handleIntent(intent: Intent?) {
+    val container = (application as YesChefApp).container
     if (intent?.getBooleanExtra(MainActivity.EXTRA_OPEN_MEAL, false) == true) {
-        (application as YesChefApp).container.mealReminders.requestOpen()
+        container.mealReminders.requestOpen()
+    }
+    // "Share" a recipe page from the browser or another app: offer to import it.
+    if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
+        RecipeImport.firstUrl(intent.getStringExtra(Intent.EXTRA_TEXT))?.let { container.sharedLink.value = it }
     }
 }
 
