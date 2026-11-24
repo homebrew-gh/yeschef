@@ -213,6 +213,18 @@ class ScreenshotTest {
         }
     }
 
+    /** The past week opened: yesterday's dinner that didn't get made, with "Make it today". */
+    @Test fun mealPlanEarlier() {
+        phone(tab = 2) {
+            MealPlanContent(
+                Sample.earlierMeals + Sample.mealPlan, Sample.today, null, {}, actions = { SyncIcon() },
+                sideSlugs = setOf("jasmine-rice", "roasted-broccoli", "yogurt-dill-sauce", "garlic-green-beans"),
+                onEditMeal = {}, onSwapDay = {}, onAddToDay = {}, onMakeToday = { _, _ -> },
+                showEarlierAtStart = true,
+            )
+        }
+    }
+
     /** Long-press a meal: move the whole meal to another day or meal, or remove it. */
     @Test fun moveMealSheet() = sheet {
         MoveMealContent(
@@ -618,6 +630,11 @@ private object Sample {
         MealPlanEntity(9, "2026-11-24", "dinner", null, null, "r14", "yogurt-dill-sauce", "Yogurt-dill sauce"),
         MealPlanEntity(4, "2026-11-25", "lunch", "Leftover lasagna", "Pack for work", null, null, null),
         MealPlanEntity(5, "2026-11-25", "dinner", null, null, "r4", "miso-salmon", "Miso glazed salmon"),
+    )
+
+    val earlierMeals = listOf(
+        MealPlanEntity(20, "2026-11-22", "dinner", null, null, "r4", "miso-salmon", "Miso glazed salmon"),
+        MealPlanEntity(21, "2026-11-22", "dinner", null, null, "r12", "jasmine-rice", "Jasmine rice"),
     )
 
     val timers = listOf(

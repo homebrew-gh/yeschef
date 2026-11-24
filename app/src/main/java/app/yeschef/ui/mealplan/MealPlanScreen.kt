@@ -64,6 +64,12 @@ import app.yeschef.ui.RecipeImage
 import app.yeschef.ui.SyncAction
 import app.yeschef.ui.YcTopBar
 import app.yeschef.ui.theme.OverlineStyle
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Today
+import androidx.compose.material3.OutlinedButton
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
@@ -74,7 +80,8 @@ import java.util.Locale
 fun MealPlanScreen(container: AppContainer, onOpenRecipe: (String) -> Unit, onCookMeal: (MealRequest) -> Unit) {
     val repo = container.repository
     val today = remember { LocalDate.now() }
-    val entries by remember { repo.mealPlan(today) }.collectAsStateWithLifecycle(emptyList())
+    // The last week too, so a meal that didn't get made can still be found and moved.
+    val entries by remember { repo.mealPlan(today.minusDays(EARLIER_DAYS)) }.collectAsStateWithLifecycle(emptyList())
     val config by container.config.collectAsStateWithLifecycle()
     val recipes by remember { repo.recipes() }.collectAsStateWithLifecycle(emptyList())
     val sideSlugs = remember(recipes) { recipes.filter { Cookbook.chapterOf(it) == "Sides" }.map { it.slug }.toSet() }
@@ -90,6 +97,7 @@ fun MealPlanScreen(container: AppContainer, onOpenRecipe: (String) -> Unit, onCo
     }
 
     var editing by remember { mutableStateOf<MealGroup?>(null) }
+    var editingToToday by remember { mutableStateOf(false) }
     var confirmRemove by remember { mutableStateOf<MealGroup?>(null) }
     var swapping by rememberSaveable { mutableStateOf<String?>(null) }
     var adding by rememberSaveable { mutableStateOf<String?>(null) }
@@ -99,6 +107,7 @@ fun MealPlanScreen(container: AppContainer, onOpenRecipe: (String) -> Unit, onCo
         val date = runCatching { LocalDate.parse(meal.date) }.getOrDefault(today)
         ModalBottomSheet(onDismissRequest = { editing = null }, sheetState = sheetState) {
             MoveMealContent(
+                initialDate = if (editingToToday) today else date,
                 title = mealTitle(meal),
                 recipeCount = meal.entries.size,
                 date = date,
@@ -159,7 +168,16 @@ fun MealPlanScreen(container: AppContainer, onOpenRecipe: (String) -> Unit, onCo
     MealPlanContent(
         entries, today, config?.serverUrl, onOpenRecipe,
         actions = { SyncAction(container) }, onCookMeal = onCookMeal, sideSlugs = sideSlugs,
-        onEditMeal = { editing = it },
+        onEditMeal = { editingToToday = false; editing = it },
+        onMakeToday = { meal, slotTaken ->
+            // Today's slot already has a meal: let him pick another meal or day instead of merging them.
+            if (slotTaken) {
+                editingToToday = true
+                editing = meal
+            } else {
+                edit { repo.moveMeal(meal.entries, today, meal.entryType) }
+            }
+        },
         onSwapDay = { swapping = it.toString() },
         onAddToDay = { adding = it.toString() },
     )
@@ -186,9 +204,18 @@ fun MealPlanContent(
     onEditMeal: ((MealGroup) -> Unit)? = null,
     onSwapDay: ((LocalDate) -> Unit)? = null,
     onAddToDay: ((LocalDate) -> Unit)? = null,
+    /** Move a meal from an earlier day to today; true when today already has that meal. */
+    onMakeToday: ((MealGroup, Boolean) -> Unit)? = null,
+    showEarlierAtStart: Boolean = false,
 ) {
     // Each day's meals, with sides next to the main they go with.
-    val byDay = remember(entries) { groupMeals(entries).groupBy { it.date } }
+    val allDays = remember(entries) { groupMeals(entries).groupBy { it.date } }
+    val todayIso = today.toString()
+    val earlier = allDays.filterKeys { it < todayIso }
+    val byDay = allDays.filterKeys { it >= todayIso }
+    val todayTypes = allDays[todayIso].orEmpty().map { it.entryType }.toSet()
+    var showEarlier by rememberSaveable { mutableStateOf(showEarlierAtStart) }
+    val earlierCount = earlier.values.sumOf { it.size }
     Scaffold(
         topBar = {
             YcTopBar("Meal plan", actions = {
@@ -203,6 +230,30 @@ fun MealPlanContent(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            if (earlier.isNotEmpty()) {
+                item(key = "earlier") {
+                    EarlierToggle(earlierCount, showEarlier) { showEarlier = !showEarlier }
+                }
+            }
+            if (showEarlier) earlier.forEach { (date, meals) ->
+                item(key = "d-$date") { DayHeader(date, today, past = true) }
+                meals.forEach { meal ->
+                    val (mains, sides) = meal.mainsAndSides { it in sideSlugs }
+                    val ordered = meal.copy(entries = mains + sides)
+                    item(key = "m-$date-${meal.entryType}") {
+                        MealCard(
+                            type = meal.entryType,
+                            mains = mains,
+                            sides = sides,
+                            serverUrl = serverUrl,
+                            onOpenRecipe = onOpenRecipe,
+                            onEdit = onEditMeal?.let { edit -> { edit(ordered) } },
+                            onCook = null,
+                            onMakeToday = onMakeToday?.let { make -> { make(ordered, meal.entryType in todayTypes) } },
+                        )
+                    }
+                }
+            }
             if (byDay.isEmpty()) {
                 item {
                     Text(
@@ -255,10 +306,11 @@ private fun MealCard(
     onOpenRecipe: (String) -> Unit,
     onEdit: (() -> Unit)?,
     onCook: (() -> Unit)?,
+    onMakeToday: (() -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     Surface(shape = MaterialTheme.shapes.large, color = colors.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(bottom = if (sides.isEmpty() && onCook == null) 0.dp else 10.dp)) {
+        Column(Modifier.padding(bottom = if (sides.isEmpty() && onCook == null && onMakeToday == null) 0.dp else 10.dp)) {
             mains.forEachIndexed { i, entry ->
                 MealRow(entry, serverUrl, onOpenRecipe, imageSize = 64, label = if (i == 0) type else null, onLongClick = onEdit, onMore = if (i == 0) onEdit else null)
             }
@@ -282,6 +334,13 @@ private fun MealCard(
                     Icon(Icons.Filled.SoupKitchen, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Cook this meal together")
+                }
+            }
+            if (onMakeToday != null) {
+                OutlinedButton(onClick = onMakeToday, modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp).padding(top = 8.dp)) {
+                    Icon(Icons.Filled.Today, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Make it today")
                 }
             }
         }
@@ -339,7 +398,7 @@ private fun MealRow(
 }
 
 @Composable
-private fun DayHeader(isoDate: String, today: LocalDate, onSwap: (() -> Unit)? = null, onAdd: (() -> Unit)? = null) {
+private fun DayHeader(isoDate: String, today: LocalDate, onSwap: (() -> Unit)? = null, onAdd: (() -> Unit)? = null, past: Boolean = false) {
     val date = runCatching { LocalDate.parse(isoDate) }.getOrNull()
     val isToday = date == today
     Row(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 2.dp, start = 4.dp), verticalAlignment = Alignment.Bottom) {
@@ -348,10 +407,15 @@ private fun DayHeader(isoDate: String, today: LocalDate, onSwap: (() -> Unit)? =
                 null -> isoDate
                 today -> "Today"
                 today.plusDays(1) -> "Tomorrow"
+                today.minusDays(1) -> "Yesterday"
                 else -> date.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.getDefault())
             },
             style = MaterialTheme.typography.titleLarge,
-            color = if (isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            color = when {
+                isToday -> MaterialTheme.colorScheme.primary
+                past -> MaterialTheme.colorScheme.onSurfaceVariant
+                else -> MaterialTheme.colorScheme.onSurface
+            },
         )
         if (date != null) {
             Spacer(Modifier.width(8.dp))
@@ -373,5 +437,27 @@ private fun DayHeader(isoDate: String, today: LocalDate, onSwap: (() -> Unit)? =
                 Icon(Icons.Filled.Add, "Add to this day", tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(20.dp))
             }
         }
+    }
+}
+
+/** How far back the plan shows, matching what sync keeps (a week). */
+const val EARLIER_DAYS = 7L
+
+/** "Past week · 2 meals": opens the last week's meals, hidden by default. */
+@Composable
+private fun EarlierToggle(count: Int, open: Boolean, onToggle: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Row(
+        Modifier.fillMaxWidth().padding(top = 8.dp).clip(MaterialTheme.shapes.medium)
+            .clickable(onClick = onToggle).padding(horizontal = 4.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Filled.History, contentDescription = null, tint = colors.outline, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(10.dp))
+        Text("Past week", style = MaterialTheme.typography.titleSmall, color = colors.onSurfaceVariant)
+        Spacer(Modifier.width(8.dp))
+        Text(if (count == 1) "1 meal" else "$count meals", style = MaterialTheme.typography.labelLarge, color = colors.outline)
+        Spacer(Modifier.weight(1f))
+        Icon(if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, if (open) "Hide earlier days" else "Show earlier days", tint = colors.outline)
     }
 }
