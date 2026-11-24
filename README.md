@@ -34,8 +34,11 @@ your own Mealie server.
 - **Cookbook.** Recipes read like a cookbook, with chapters from Mealie categories and filter chips
   from tags (see [the cookbook scheme](#the-cookbook-categories-and-tags)). Sort by name, newest, rating,
   quickest or "not made in a while", or let the dice pick something.
-- **Cook mode.** Large text, screen stays awake, and each step shows the ingredients it needs
-  ("You'll need"). When you finish, YesChef offers to mark the recipe as cooked.
+- **Cook mode ("Let's cook!").** Large text, screen stays awake, and each step shows the ingredients it needs
+  ("You'll need"). When you finish, YesChef offers to mark the recipe as cooked. Starting it, for one
+  recipe or a whole meal, plays a one-second scene picked at random: a wok tossing stir-fry, a
+  cleaver chopping a carrot, or a pot steaming. Tap to skip; it's off when animations are turned off
+  on the phone.
 - **Cooking notes.** Tap the mic in cook mode and say what happened ("needed 10 more minutes").
   Notes are tagged with the step on screen and saved to the recipe's timeline in Mealie, ready for
   an assistant to review.

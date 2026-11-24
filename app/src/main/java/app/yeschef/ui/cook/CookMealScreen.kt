@@ -222,6 +222,10 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
         )
     }
 
+    // The "Let's cook!" scene, once when the meal opens (not again on rotation).
+    var intro by rememberSaveable(request.encode()) { mutableStateOf(true) }
+    if (intro) CookIntroOverlay(onDone = { intro = false })
+
     val kitchenTools = rememberKitchenToolsState()
     KitchenToolsSheet(kitchenTools)
 

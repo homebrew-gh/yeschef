@@ -16,6 +16,8 @@ import app.yeschef.data.RecipeDraft
 import app.yeschef.data.changesFrom
 import app.yeschef.data.cook.CookNote
 import app.yeschef.data.cook.CookNotes
+import app.yeschef.ui.cook.CookIntroOverlay
+import app.yeschef.ui.cook.LETS_COOK
 import app.yeschef.ui.cook.clockText
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -157,6 +159,9 @@ fun RecipeDetailScreen(
 
     // Cook mode keeps the screen awake while this recipe is open.
     var cookMode by rememberSaveable { mutableStateOf(false) }
+    // A little scene plays as cook mode starts.
+    var cookIntro by remember { mutableStateOf(false) }
+    if (cookIntro) CookIntroOverlay(onDone = { cookIntro = false })
     val view = LocalView.current
     DisposableEffect(cookMode) {
         view.keepScreenOn = cookMode
@@ -439,6 +444,7 @@ fun RecipeDetailScreen(
                 if (cookNotes.isNotEmpty()) reviewingNotes = true else askCooked = true
             }
             cookMode = !cookMode
+            if (cookMode) cookIntro = true
         },
         tagLine = entity?.let { Cookbook.names(it.categories) + Cookbook.names(it.tags) }.orEmpty(),
         onEditTags = if (entity != null) ({ editingTags = true }) else null,
@@ -527,7 +533,7 @@ fun RecipeDetailContent(
                     FilterChip(
                         selected = cookMode,
                         onClick = onToggleCookMode,
-                        label = { Text("Cook mode") },
+                        label = { Text(LETS_COOK) },
                         leadingIcon = {
                             Icon(if (cookMode) Icons.Filled.LightMode else Icons.Outlined.LightMode, contentDescription = null, modifier = Modifier.size(18.dp))
                         },
