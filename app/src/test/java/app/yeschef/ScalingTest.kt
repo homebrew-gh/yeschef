@@ -38,4 +38,11 @@ class ScalingTest {
         assertEquals(8.0, baseServings(null, "8 servings")!!, 0.0)
         assertEquals(null, baseServings(0.0, "One loaf"))
     }
+
+    // Mealie's display text: Griddle steak fajitas, 6 servings up to 8.
+    @Test fun scalesMealieSuperscriptFractions() {
+        assertEquals("2⅓ lb flank steak", scaleIngredient("1 ³/₄ lb flank steak", 8.0 / 6))
+        assertEquals("1 cup beef broth", scaleIngredient("¹/₂ cup beef broth", 2.0))
+        assertEquals("1 ³/₄ lb flank steak", scaleIngredient("1 ³/₄ lb flank steak", 1.0))
+    }
 }

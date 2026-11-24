@@ -11,11 +11,27 @@ import kotlin.math.roundToLong
  */
 fun scaleIngredient(text: String, factor: Double): String {
     if (factor == 1.0) return text
-    val m = LEADING.find(text) ?: return text
+    val plain = plainDigits(text)
+    val m = LEADING.find(plain) ?: return text
     val first = parseAmount(m.groupValues[1]) ?: return text
     val second = m.groupValues[3].takeIf { it.isNotEmpty() }?.let(::parseAmount)
     val scaled = formatAmount(first * factor) + (second?.let { m.groupValues[2] + formatAmount(it * factor) } ?: "")
-    return scaled + text.substring(m.range.last + 1)
+    return scaled + plain.substring(m.range.last + 1)
+}
+
+/**
+ * Mealie shows fractions with superscript and subscript digits ("1 ³/₄ lb", "¹/₂ cup").
+ * This turns them into plain ones ("1 3/4 lb") so the amount can be read.
+ */
+fun plainDigits(text: String): String {
+    if (text.none { it in SUPER_SUB }) return text
+    return buildString(text.length) { text.forEach { append(SUPER_SUB[it] ?: it) } }
+}
+
+private val SUPER_SUB: Map<Char, Char> = buildMap {
+    "⁰¹²³⁴⁵⁶⁷⁸⁹".forEachIndexed { i, c -> put(c, '0' + i) }
+    "₀₁₂₃₄₅₆₇₈₉".forEachIndexed { i, c -> put(c, '0' + i) }
+    put('⁄', '/')
 }
 
 /** The recipe's base servings: Mealie's number if set, else the number at the start of the yield text. */

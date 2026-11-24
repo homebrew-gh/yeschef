@@ -122,6 +122,7 @@ import app.yeschef.data.cook.IngredientLine
 import app.yeschef.data.cook.StepLine
 import app.yeschef.data.cook.firstSteps
 import app.yeschef.data.cook.ingredientsForSteps
+import app.yeschef.data.cook.plainDigits
 import app.yeschef.data.cook.timerStepLabel
 import app.yeschef.data.remote.IngredientDto
 import app.yeschef.data.remote.RecipeDetailDto
@@ -946,7 +947,7 @@ internal fun stepIngredientRows(
     val first = firstSteps[i]
     if (first != null && first < step) {
         val name = ing.food?.name?.takeIf { it.isNotBlank() }
-            ?: ingredientText(ing).replace(LEADING_AMOUNT, "").ifBlank { ingredientText(ing) }
+            ?: plainDigits(ingredientText(ing)).replace(LEADING_AMOUNT, "").ifBlank { ingredientText(ing) }
         StepIngredientRow(i, name.replaceFirstChar { it.uppercase() }, fromStep = first)
     } else {
         StepIngredientRow(i, scale(ingredientText(ing)))
