@@ -32,6 +32,10 @@ interface MealieApi {
     @GET("users/self")
     suspend fun self(): UserSelf
 
+    /** Creates a long-lived (five-year) API token for the signed-in user. */
+    @POST("users/api-tokens")
+    suspend fun createApiToken(@Body body: ApiTokenRequest): ApiTokenResponse
+
     // perPage=-1 returns every row. Fine for one household's recipe box.
     @GET("recipes")
     suspend fun recipes(

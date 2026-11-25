@@ -23,6 +23,12 @@ data class TokenResponse(
 )
 
 @Serializable
+data class ApiTokenRequest(val name: String)
+
+@Serializable
+data class ApiTokenResponse(val token: String)
+
+@Serializable
 data class UserSelf(
     val id: String,
     val username: String? = null,

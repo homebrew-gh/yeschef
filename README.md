@@ -117,7 +117,8 @@ YesChef is also listed on [Zapstore](https://zapstore.dev), which installs and u
 2. In YesChef, enter your server address, for example `https://mealie.example.com` or
    `http://192.168.1.20:9000`. YesChef adds `/api` itself.
 3. Paste the token and tap **Connect**. You can also sign in with your Mealie username and password
-   instead; YesChef exchanges them for a token and doesn't store the password.
+   instead; YesChef uses them once to create a long-lived API token named "YesChef" (you'll see it
+   under **API Tokens**) and doesn't store the password.
 
 You can change the server, token and theme later in **Settings**.
 
@@ -215,6 +216,9 @@ by server data.
   If the browser warns about the certificate, install your CA (see above).
 - **Works in the browser but not in YesChef.** Check the address has no extra path (use
   `https://host`, not `https://host/g/home`), and that the API token hasn't been deleted in Mealie.
+- **"Mealie rejected the API token" after a couple of days.** Older versions kept the
+  48-hour login session when you signed in with a password, so sync stopped once it expired. Update
+  YesChef, then in **Settings > Change server or token** paste a token from Mealie's **API Tokens**.
 - **Shopping items aren't grouped by aisle.** Grouping uses Mealie labels on foods. Give foods a
   label in Mealie (or let an assistant do it), and set the label order in the shopping list's
   settings.
