@@ -25,7 +25,8 @@ your own Mealie server.
   in the order you set in Mealie. Each item gets a colour stripe and tag for the recipe it came
   from, and you can filter the list to one recipe. Tick items or add new ones offline.
 - **Multiple lists.** Switch, create, rename and delete lists. **Clear cart** removes everything
-  you've ticked, and **Uncheck all** starts the list over.
+  you've ticked, and **Uncheck all** starts the list over. The screen reopens the list you
+  were last on, even after a restart.
 - **Shopping Day.** Shop from several lists at once, say Weekly meals plus a small Household list
   for toilet paper and dish soap. Tap **Shopping Day** on the shopping screen and pick the lists
   (YesChef remembers them). You get one list sorted by store section, each item tagged with the

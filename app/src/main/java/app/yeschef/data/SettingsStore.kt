@@ -28,6 +28,7 @@ class SettingsStore(private val context: Context) {
     private val dayListsKey = stringPreferencesKey("shopping_day_lists")
     private val dayAddToKey = stringPreferencesKey("shopping_day_add_to")
     private val diceKey = stringPreferencesKey("dice_chapter")
+    private val lastListKey = stringPreferencesKey("last_shopping_list")
 
     /** The cookbook chapter the dice rolls from, last picked; null means any recipe. Mains until picked. */
     val diceChapter: Flow<String?> = context.dataStore.data.map { prefs ->
@@ -56,6 +57,13 @@ class SettingsStore(private val context: Context) {
 
     suspend fun saveShoppingDayAddTo(id: String) {
         context.dataStore.edit { it[dayAddToKey] = id }
+    }
+
+    /** The shopping list last open (a Mealie list id, or the Shopping Day view), so the screen reopens it. */
+    val lastShoppingList: Flow<String?> = context.dataStore.data.map { it[lastListKey] }
+
+    suspend fun saveLastShoppingList(id: String) {
+        context.dataStore.edit { it[lastListKey] = id }
     }
 
     /** Cook-mode notes not yet saved to Mealie, per recipe id. Kept across app restarts. */
