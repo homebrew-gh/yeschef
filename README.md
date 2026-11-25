@@ -28,7 +28,8 @@ your own Mealie server.
   parser (its AI parser, if Mealie has AI set up) links them to foods Mealie already knows, so they
   move into those foods' aisles. Items that aren't a known food stay under Other.
 - **Multiple lists.** Switch, create, rename and delete lists. **Clear cart** removes everything
-  you've ticked, and **Uncheck all** starts the list over.
+  you've ticked, and **Uncheck all** starts the list over. The screen reopens the list you
+  were last on, even after a restart.
 - **Shopping Day.** Shop from several lists at once, say Weekly meals plus a small Household list
   for toilet paper and dish soap. Tap **Shopping Day** on the shopping screen and pick the lists
   (YesChef remembers them). You get one list sorted by store section, each item tagged with the

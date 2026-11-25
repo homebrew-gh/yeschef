@@ -100,6 +100,7 @@ import app.yeschef.ui.YcTopBar
 import app.yeschef.ui.theme.OverlineStyle
 import app.yeschef.ui.theme.RecipeTagColors
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -114,8 +115,13 @@ fun ShoppingScreen(container: AppContainer) {
     val lists by remember { repo.shoppingLists() }.collectAsStateWithLifecycle(emptyList())
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(lists) {
-        if (selectedId != SHOPPING_DAY && lists.isNotEmpty() && lists.none { it.id == selectedId }) selectedId = lists.first().id
+        if (selectedId != SHOPPING_DAY && lists.isNotEmpty() && lists.none { it.id == selectedId }) {
+            // Reopen the list last viewed, even after a restart; the first list if that one is gone.
+            val last = settings.lastShoppingList.first()
+            selectedId = last?.takeIf { id -> id == SHOPPING_DAY || lists.any { it.id == id } } ?: lists.first().id
+        }
     }
+    LaunchedEffect(selectedId) { selectedId?.let { settings.saveLastShoppingList(it) } }
     val inDay = selectedId == SHOPPING_DAY
     val selected = lists.firstOrNull { it.id == selectedId }
     val dayIds by remember { settings.shoppingDayLists }.collectAsStateWithLifecycle(emptyList())
