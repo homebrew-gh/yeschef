@@ -1,6 +1,7 @@
 package app.yeschef.data.remote
 
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
@@ -107,6 +108,13 @@ interface MealieApi {
     /** The user's group; its aiProviderSettings say whether Mealie has AI (and AI for images) set up. */
     @GET("groups/self")
     suspend fun groupSelf(): JsonObject
+
+    /**
+     * Reads a recipe page without saving anything: the page's schema.org Recipe (course,
+     * cuisine, keywords...) as an object, or a message string when it has none.
+     */
+    @POST("recipes/test-scrape-url")
+    suspend fun testScrapeUrl(@Body body: JsonObject): JsonElement
 
     /** Scrapes a recipe page into a new recipe; returns its slug as a JSON string. */
     @POST("recipes/create/url")

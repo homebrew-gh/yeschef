@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
@@ -454,19 +455,139 @@ class Repository(
             api.createRecipeWithAi(listOf(MultipartBody.Part.createFormData("url", url)))
                 .use { RecipeImport.slugOf(it.string()) }
         }
+        onStage(ImportStage.Organizing)
+        tidyImport(api, slug, url)
         sync()
         return slug
     }
 
     /** Has the group's AI write up a recipe from photos (JPEG bytes) of it; returns the slug. */
-    suspend fun importFromPhotos(jpegs: List<ByteArray>): String {
+    suspend fun importFromPhotos(jpegs: List<ByteArray>, onStage: (ImportStage) -> Unit = {}): String {
         val api = importApiProvider() ?: throw IOException("Not connected to a server")
         val parts = jpegs.mapIndexed { i, bytes ->
             MultipartBody.Part.createFormData("images", "page-${i + 1}.jpg", bytes.toRequestBody("image/jpeg".toMediaType()))
         }
         val slug = api.createRecipeWithAi(parts).use { RecipeImport.slugOf(it.string()) }
+        onStage(ImportStage.Organizing)
+        tidyImport(api, slug, url = null)
         sync()
         return slug
+    }
+
+    /**
+     * After an import: links the ingredient lines to Mealie foods (with Mealie's AI parser
+     * when it has one), so they land in their aisles on a shopping list, and picks a chapter
+     * and tags from the ones already in Mealie. Foods Mealie doesn't have yet are created, as
+     * its own parse page does; they have no aisle until someone gives them one. Best effort:
+     * the recipe is already saved, so a failure here leaves it as Mealie imported it.
+     */
+    private suspend fun tidyImport(api: MealieApi, slug: String, url: String?) {
+        try {
+            val ai = runCatching { AiStatus.from(api.groupSelf()).enabled }.getOrDefault(false)
+            val raw = api.recipeRaw(slug)
+            val lines = (raw["recipeIngredient"] as? JsonArray).orEmpty().filterIsInstance<JsonObject>()
+            val todo = lines.withIndex().mapNotNull { (i, line) -> AutoOrganize.lineText(line)?.let { i to it } }
+            val results = parseTexts(api, todo.map { it.second }, ai)
+            val foods = Lookup({ api.foods().items }, { api.createFood(it) })
+            val units = Lookup({ api.units().items }, { api.createUnit(it) })
+            val newLines = lines.toMutableList()
+            var linked = false
+            todo.forEachIndexed { n, (index, text) ->
+                val ing = results.getOrNull(n)?.get("ingredient") as? JsonObject ?: return@forEachIndexed
+                val parsedFood = (ing["food"] as? JsonObject)?.takeIf { it.string("id") != null || it.needsId() } ?: return@forEachIndexed
+                val food = if (parsedFood.needsId()) foods.resolve(parsedFood) else parsedFood
+                val unit = ing["unit"]?.let { if (it.needsId()) units.resolve(it as JsonObject) else it }
+                newLines[index] = AutoOrganize.mergeLine(lines[index], parsedIngredient(ing, text, food, unit), text)
+                linked = true
+            }
+
+            val site = url?.let { u ->
+                runCatching { AutoOrganize.siteWords(api.testScrapeUrl(JsonObject(mapOf("url" to JsonPrimitive(u))))) }.getOrNull()
+            }.orEmpty()
+            fun organizers(key: String) = (raw[key] as? JsonArray).orEmpty().filterIsInstance<JsonObject>()
+            val hadCats = organizers("recipeCategory")
+            val hadTags = organizers("tags")
+            val picked = AutoOrganize.pick(
+                name = raw.string("name").orEmpty(),
+                foods = newLines.mapNotNull { (it["food"] as? JsonObject)?.string("name") },
+                site = site,
+                categories = runCatching { api.categories().items }.getOrDefault(emptyList()),
+                tags = runCatching { api.tags().items }.getOrDefault(emptyList()),
+                hasCategory = hadCats.isNotEmpty(),
+            )
+            fun merged(had: List<JsonObject>, add: List<OrganizerDto>): JsonArray? {
+                val ids = had.mapNotNull { it.string("id") }.toSet()
+                val extra = add.filter { it.id !in ids }
+                if (extra.isEmpty()) return null
+                return JsonArray(
+                    had + extra.map { JsonObject(mapOf("id" to JsonPrimitive(it.id), "name" to JsonPrimitive(it.name), "slug" to JsonPrimitive(it.slug))) },
+                )
+            }
+            val body = buildMap<String, JsonElement> {
+                if (linked) put("recipeIngredient", JsonArray(newLines))
+                merged(hadCats, picked.categories)?.let { put("recipeCategory", it) }
+                merged(hadTags, picked.tags)?.let { put("tags", it) }
+            }
+            if (body.isNotEmpty()) api.patchRecipeJson(slug, JsonObject(body))
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // left as imported; Mealie's parse page or the assistant can still sort it out
+        }
+    }
+
+    /**
+     * Mealie's ingredient parser over [texts]: its AI parser when the group has AI (it matches
+     * foods by meaning, not just spelling), else its own. Empty when neither works.
+     */
+    private suspend fun parseTexts(api: MealieApi, texts: List<String>, ai: Boolean): List<JsonObject> {
+        if (texts.isEmpty()) return emptyList()
+        if (ai) {
+            try {
+                return api.parseIngredients(ParseIngredientsBody(texts, parser = "openai"))
+            } catch (e: HttpException) {
+                if (e.code() == 401) throw e
+            } catch (e: IOException) {
+                // a slow AI; Mealie's own parser is quick
+            }
+        }
+        return try {
+            api.parseIngredients(ParseIngredientsBody(texts))
+        } catch (e: HttpException) {
+            if (e.code() == 401) throw e
+            emptyList()
+        }
+    }
+
+    /** What the wand did: items now in an aisle, items linked to a food that has no aisle yet, and items Mealie had no food for. */
+    data class AisleResult(val sorted: Int, val noAisle: Int, val unknown: Int)
+
+    /**
+     * The shopping list's magic wand: links hand-added items on [listIds] to the foods Mealie
+     * already has, so they move into those foods' aisles. Items it has no food for stay as
+     * typed; no foods are created. Needs the server.
+     */
+    suspend fun sortIntoAisles(listIds: List<String>): AisleResult {
+        val api = importApiProvider() ?: throw IOException("Not connected to a server")
+        sync() // sends items added offline first, so they get sorted too
+        val ai = runCatching { AiStatus.from(api.groupSelf()).enabled }.getOrDefault(false)
+        val items = listIds.flatMap { id -> (api.shoppingListRaw(id)["listItems"] as? JsonArray).orEmpty().filterIsInstance<JsonObject>() }
+            .filter(AutoOrganize::needsAisle)
+        if (items.isEmpty()) return AisleResult(0, 0, 0)
+        val results = parseTexts(api, items.map { AutoOrganize.itemText(it)!! }, ai)
+        val foods = api.foods().items.associateBy { it.string("id") }
+        var sorted = 0
+        var noAisle = 0
+        items.forEachIndexed { n, item ->
+            val ing = results.getOrNull(n)?.get("ingredient") as? JsonObject ?: return@forEachIndexed
+            val foodId = (ing["food"] as? JsonObject)?.string("id") ?: return@forEachIndexed
+            val food = foods[foodId] ?: (ing["food"] as JsonObject)
+            val updated = AutoOrganize.linkedItem(item, ing, food)
+            api.updateShoppingItem(item.string("id")!!, updated)
+            if (updated.string("labelId") != null) sorted++ else noAisle++
+        }
+        sync()
+        return AisleResult(sorted, noAisle, items.size - sorted - noAisle)
     }
 
     private suspend fun cacheDetail(api: MealieApi, slug: String) {

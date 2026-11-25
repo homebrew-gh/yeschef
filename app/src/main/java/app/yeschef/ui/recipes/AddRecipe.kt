@@ -103,7 +103,7 @@ fun AddRecipeSheet(container: AppContainer, initialUrl: String, onDismiss: () ->
 
     fun importPhotos(uris: List<Uri>) {
         if (uris.isEmpty()) return
-        run(ImportStage.AiReadingPhotos) { repo.importFromPhotos(uris.take(MAX_PHOTOS).map { preparePhoto(context, it, maxSide = 2048) }) }
+        run(ImportStage.AiReadingPhotos) { repo.importFromPhotos(uris.take(MAX_PHOTOS).map { preparePhoto(context, it, maxSide = 2048) }) { stage = it } }
     }
 
     val takePhoto = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
@@ -243,6 +243,7 @@ fun AddRecipeContent(
                         ImportStage.ReadingPage -> "Mealie is reading the page…"
                         ImportStage.AiReadingPage -> "No recipe found on the page, so your AI is reading it. This can take a minute…"
                         ImportStage.AiReadingPhotos -> "Your AI is reading the photos. This can take a minute…"
+                        ImportStage.Organizing -> "Sorting the ingredients into aisles and picking a chapter and tags…"
                     },
                     style = MaterialTheme.typography.bodyMedium,
                 )

@@ -23,7 +23,7 @@ data class AiStatus(val enabled: Boolean, val images: Boolean) {
     }
 }
 
-enum class ImportStage { ReadingPage, AiReadingPage, AiReadingPhotos }
+enum class ImportStage { ReadingPage, AiReadingPage, AiReadingPhotos, Organizing }
 
 object RecipeImport {
     private val urlPattern = Regex("""https?://[^\s<>"']+""", RegexOption.IGNORE_CASE)

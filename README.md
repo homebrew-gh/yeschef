@@ -23,7 +23,10 @@ your own Mealie server.
 
 - **Shopping lists sorted by aisle.** Items are grouped into store sections from Mealie's labels,
   in the order you set in Mealie. Each item gets a colour stripe and tag for the recipe it came
-  from, and you can filter the list to one recipe. Tick items or add new ones offline.
+  from, and you can filter the list to one recipe. Tick items or add new ones offline. Items you
+  type in by hand start under Other; tap the **magic wand** at the top and Mealie's ingredient
+  parser (its AI parser, if Mealie has AI set up) links them to foods Mealie already knows, so they
+  move into those foods' aisles. Items that aren't a known food stay under Other.
 - **Multiple lists.** Switch, create, rename and delete lists. **Clear cart** removes everything
   you've ticked, and **Uncheck all** starts the list over.
 - **Shopping Day.** Shop from several lists at once, say Weekly meals plus a small Household list
@@ -59,6 +62,14 @@ your own Mealie server.
   **From a photo** appears: snap a cookbook page or recipe card (or pick up to 4 photos) and the AI
   writes it up. The photo option needs an image provider in Mealie's AI settings. Imports need the
   server, so they don't work offline.
+  After an import, YesChef runs Mealie's ingredient parser over the new recipe (the AI parser when
+  Mealie has AI) and links each line to a food, so the ingredients land in their aisles on a
+  shopping list. Foods Mealie didn't have yet are created without an aisle; give them a label in
+  Mealie, or let an assistant do it. It also picks a chapter from the page's own course (Main
+  Course, Side Dish, Cocktails...) or a name that says it (soup, salad), and tags from the foods
+  (Chicken, Beef, Seafood...) and from the page's keywords. Only categories and tags you already
+  have in Mealie are used; none are made up. Vegetarian and Vegan are only tagged when the page
+  says so.
 - **Edit recipes by hand.** Change the name, description, servings, prep/cook/total times,
   ingredients (add, remove, reorder, one per line, amount first) and steps. Works offline; Mealie
   re-reads new and changed ingredient lines when the edit syncs, so they still scale and go on the
