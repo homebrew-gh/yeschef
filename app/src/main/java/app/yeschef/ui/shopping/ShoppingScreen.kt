@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CloudUpload
@@ -35,7 +36,9 @@ import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -92,6 +95,7 @@ import app.yeschef.data.parseRecipeIds
 import app.yeschef.data.remote.MealieJson
 import app.yeschef.data.sync.SyncScheduler
 import app.yeschef.ui.SyncAction
+import app.yeschef.data.Repository
 import app.yeschef.ui.YcTopBar
 import app.yeschef.ui.theme.OverlineStyle
 import app.yeschef.ui.theme.RecipeTagColors
@@ -136,6 +140,7 @@ fun ShoppingScreen(container: AppContainer) {
             }
         }
     }
+    var sorting by remember { mutableStateOf(false) }
     fun queued(block: suspend () -> Unit) {
         scope.launch {
             block()
@@ -197,7 +202,28 @@ fun ShoppingScreen(container: AppContainer) {
             val target = if (inDay) addToId else selected?.id
             target?.let { queued { repo.addItem(it, text) } }
         },
-        actions = { SyncAction(container) },
+        actions = {
+            // The magic wand: links items typed in by hand to Mealie's foods, so they move into their aisles.
+            if (sorting || rows.any { !it.checked && it.labelId == null }) {
+                IconButton(
+                    enabled = !sorting,
+                    onClick = {
+                        sorting = true
+                        listAction("Couldn't sort the list") {
+                            try {
+                                snackbar.showSnackbar(aisleMessage(repo.sortIntoAisles(shown.map { it.id })))
+                            } finally {
+                                sorting = false
+                            }
+                        }
+                    },
+                ) {
+                    if (sorting) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    else Icon(Icons.Filled.AutoFixHigh, "Sort items into aisles")
+                }
+            }
+            SyncAction(container)
+        },
         onClearChecked = { queued { shown.forEach { repo.clearChecked(it.id) } } },
         onUncheckAll = { queued { shown.forEach { repo.uncheckAll(it.id) } } },
         onNewList = { name -> listAction("Couldn't create the list") { repo.createList(name) } },
@@ -784,3 +810,15 @@ private fun AddItemBar(
 private fun parseColor(hex: String?): Color? = runCatching {
     Color(android.graphics.Color.parseColor(hex ?: return null))
 }.getOrNull()
+
+/** What the wand tells the person after sorting. */
+internal fun aisleMessage(r: Repository.AisleResult): String {
+    val parts = buildList {
+        if (r.sorted > 0) add("Sorted ${items(r.sorted)} into aisles.")
+        if (r.noAisle > 0) add("${items(r.noAisle)} ${if (r.noAisle == 1) "is a food" else "are foods"} with no aisle yet.")
+        if (r.unknown > 0) add("${items(r.unknown)} ${if (r.unknown == 1) "isn't a food" else "aren't foods"} Mealie knows, so ${if (r.unknown == 1) "it stays" else "they stay"} under Other.")
+    }
+    return parts.joinToString(" ").ifEmpty { "Nothing new to sort." }
+}
+
+private fun items(n: Int): String = if (n == 1) "1 item" else "$n items"
