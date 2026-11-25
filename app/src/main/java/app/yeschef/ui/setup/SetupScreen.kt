@@ -42,6 +42,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import app.yeschef.AppContainer
 import app.yeschef.data.ServerConfig
+import app.yeschef.data.remote.ApiTokenRequest
 import app.yeschef.data.sync.SyncScheduler
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
@@ -67,7 +68,10 @@ fun SetupScreen(container: AppContainer) {
         scope.launch {
             try {
                 val finalToken = if (usePassword) {
-                    container.probeApi(server, null).login(username.trim(), password).accessToken
+                    // The login token is a session that Mealie expires after 48 hours, so trade
+                    // it straight away for a long-lived API token (shown in Mealie's API Tokens).
+                    val session = container.probeApi(server, null).login(username.trim(), password).accessToken
+                    container.probeApi(server, session).createApiToken(ApiTokenRequest("YesChef")).token
                 } else {
                     token.trim()
                 }
