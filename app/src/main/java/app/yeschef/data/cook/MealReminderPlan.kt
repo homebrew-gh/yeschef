@@ -27,6 +27,11 @@ data class MealSession(
         val shift = (at - p).coerceAtLeast(0)
         return copy(readyAt = readyAt + shift, reminders = reminders.map { it.copy(at = it.at + shift) }, pausedAt = null)
     }
+
+    /** Nudges the ready time and every reminder earlier (negative) or later (positive) by [deltaMs]. */
+    fun shifted(deltaMs: Long): MealSession =
+        if (deltaMs == 0L) this
+        else copy(readyAt = readyAt + deltaMs, reminders = reminders.map { it.copy(at = it.at + deltaMs) })
 }
 
 /** After this long with nothing to do, the next step gets a reminder. */
@@ -47,12 +52,15 @@ fun planReminders(
 ): List<MealReminder> {
     val due = mutableListOf<Pair<Long, String>>()
     var previousStart: Long? = null
+    val lastByRecipe = mutableMapOf<Int, Long>()
     for (step in timeline.steps) {
         val at = readyAt - step.startsBefore * 1000
         val first = step.stepIndex == 0
-        val afterGap = previousStart?.let { (at - it) / 1000 >= IDLE_GAP_SECONDS } ?: true
+        val afterGlobalGap = previousStart?.let { (at - it) / 1000 >= IDLE_GAP_SECONDS } ?: true
+        val afterRecipeGap = lastByRecipe[step.recipeIndex]?.let { (at - it) / 1000 >= IDLE_GAP_SECONDS } ?: false
         previousStart = at
-        if (!first && !afterGap) continue
+        lastByRecipe[step.recipeIndex] = at
+        if (!first && !afterGlobalGap && !afterRecipeGap) continue
         if (at < now) continue
         val recipe = recipes[step.recipeIndex]
         val what = recipe.steps.getOrNull(step.stepIndex)?.text?.let(::firstSentence)

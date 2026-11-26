@@ -42,7 +42,9 @@ your own Mealie server.
   ("You'll need"). When you finish, YesChef offers to mark the recipe as cooked. Starting it, for one
   recipe or a whole meal, plays a one-second scene picked at random: a wok tossing stir-fry, a
   cleaver chopping a carrot, or a pot steaming. Tap to skip; it's off when animations are turned off
-  on the phone.
+  on the phone. In whole-meal cook mode, you can check off steps as you finish them, nudge the
+  timeline `−5 min` or `+5 min` if you run ahead or behind, filter by dish, scale any dish's
+  servings, see hands-off oven/simmer steps at a glance, and jump straight back to the active step.
 - **Cooking notes.** Tap the mic in cook mode and say what happened ("needed 10 more minutes").
   Notes are tagged with the step on screen and saved to the recipe's timeline in Mealie, ready for
   an assistant to review.

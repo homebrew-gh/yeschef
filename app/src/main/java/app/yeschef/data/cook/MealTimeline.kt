@@ -26,6 +26,10 @@ data class MealTimelineStep(
     val recipeIndex: Int,
     val stepIndex: Int,
     val startsBefore: Long,
+    /** Scheduled span of this step on the timeline, in seconds. */
+    val durationSeconds: Long = 0L,
+    /** True for hands-off waiting steps (baking, simmering, marinating, resting). */
+    val passive: Boolean = false,
 )
 
 data class MealTimeline(val recipes: List<MealRecipePlan>, val steps: List<MealTimelineStep>) {
@@ -58,7 +62,9 @@ fun buildMealTimeline(recipes: List<MealRecipeIn>): MealTimeline {
         val lengths = spread(stepTimes, total)
         var elapsed = 0L
         lengths.forEachIndexed { s, len ->
-            steps += MealTimelineStep(r, s, total - elapsed)
+            val explicitSec = stepTimes[s] ?: 0L
+            val passive = isPassiveStep(recipe.steps[s].text, explicitSec)
+            steps += MealTimelineStep(r, s, total - elapsed, durationSeconds = len, passive = passive)
             elapsed += len
         }
     }
@@ -139,3 +145,14 @@ private fun spread(stepTimes: List<Long?>, total: Long): List<Long> {
     scaled[scaled.lastIndex] += total - scaled.sum()
     return scaled
 }
+
+private val PASSIVE_VERBS = Regex(
+    """(?i)\b(bake|roast|simmer|braise|slow\s+cook|cook\s+on\s+(?:low|high)|marinate|chill|refrigerate|freeze|rest|let\s+(?:sit|stand|cool|rest)|rise|proof|steep|soak|brine|smoke|poach|steam|boil)\b""",
+)
+private val ACTIVE_OVERRIDE = Regex(
+    """(?i)\b(stir(?:ring)?\s+constantly|whisk(?:ing)?\s+constantly|continuously|without\s+stopping)\b""",
+)
+
+/** True when a timed step (>= 5 min) is mostly hands-off waiting rather than active work. */
+fun isPassiveStep(text: String, stepTimerSeconds: Long): Boolean =
+    stepTimerSeconds >= 5 * 60L && PASSIVE_VERBS.containsMatchIn(text) && !ACTIVE_OVERRIDE.containsMatchIn(text)
