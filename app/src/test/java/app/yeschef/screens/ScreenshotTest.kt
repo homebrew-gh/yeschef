@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
 import app.yeschef.data.ShoppingRow
+import app.yeschef.data.cook.ActiveCookSession
 import app.yeschef.data.cook.CookTimer
 import app.yeschef.data.cook.Densities
 import app.yeschef.data.cook.KitchenUnit
@@ -48,6 +49,7 @@ import app.yeschef.ui.mealplan.MoveMealContent
 import app.yeschef.ui.mealplan.SwapDayContent
 import app.yeschef.ui.recipes.RecipeDetailContent
 import app.yeschef.ui.recipes.RecipeGrid
+import app.yeschef.ui.recipes.RecipeInProgressBar
 import app.yeschef.ui.setup.SetupForm
 import app.yeschef.ui.shopping.ShoppingContent
 import app.yeschef.ui.theme.YesChefTheme
@@ -98,6 +100,25 @@ class ScreenshotTest {
         Column {
             Box(Modifier.weight(1f)) { Shopping() }
             TimerTrayContent(Sample.timers, now = Sample.NOW)
+        }
+    }
+
+    /** Switched to Shopping mid-cook: the return bar stays pinned above the timers. */
+    @Test fun shoppingWhileCooking() = phone(tab = 0) {
+        Column {
+            Box(Modifier.weight(1f)) { Shopping() }
+            RecipeInProgressBar(
+                session = ActiveCookSession(
+                    slug = "classic-lasagna",
+                    name = "Classic lasagna",
+                    completedSteps = setOf(0, 1),
+                    stepIndex = 2,
+                    totalSteps = 4,
+                ),
+                onReturn = {},
+                onStop = {},
+            )
+            TimerTrayContent(Sample.timers.take(1), now = Sample.NOW)
         }
     }
 

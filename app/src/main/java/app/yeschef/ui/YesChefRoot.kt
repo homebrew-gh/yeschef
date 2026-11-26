@@ -20,11 +20,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yeschef.ui.cook.CookMealScreen
 import app.yeschef.ui.cook.MealInProgressBar
 import app.yeschef.ui.cook.MealRequest
 import app.yeschef.ui.cook.TimerTray
+import app.yeschef.ui.recipes.RecipeInProgressBar
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
 import app.yeschef.AppContainer
@@ -50,6 +53,8 @@ fun YesChefRoot(container: AppContainer) {
     var mealCode by rememberSaveable { mutableStateOf<String?>(null) }
     val meal = mealCode?.let(MealRequest::decode)
     val session by container.mealReminders.session.collectAsStateWithLifecycle()
+    val activeCook by container.activeCook.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
     val openSession = {
         session?.let { s ->
             val date = Instant.ofEpochMilli(s.readyAt).atZone(ZoneId.systemDefault()).toLocalDate()
@@ -79,13 +84,22 @@ fun YesChefRoot(container: AppContainer) {
             Tab.entries.forEach { t ->
                 item(
                     selected = t == tab,
-                    onClick = { tab = t; mealCode = null },
+                    onClick = {
+                        // Tapping Recipes while already viewing a recipe returns to the cookbook
+                        // without dropping any active cook session (it stays one tap away below).
+                        if (t == Tab.Recipes && tab == Tab.Recipes && openRecipe != null) {
+                            openRecipe = null
+                        }
+                        tab = t
+                        mealCode = null
+                    },
                     icon = { Icon(t.icon, contentDescription = null) },
                     label = { Text(t.label) },
                 )
             }
         },
     ) {
+        val viewingActiveCook = meal == null && tab == Tab.Recipes && activeCook != null && openRecipe == activeCook?.slug
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f)) {
                 if (meal != null) {
@@ -95,6 +109,17 @@ fun YesChefRoot(container: AppContainer) {
                 }
             }
             session?.takeIf { meal == null }?.let { s -> MealInProgressBar(s, onOpen = { openSession() }) }
+            activeCook?.takeIf { meal == null && !viewingActiveCook }?.let { cook ->
+                RecipeInProgressBar(
+                    session = cook,
+                    onReturn = {
+                        mealCode = null
+                        openRecipe = cook.slug
+                        tab = Tab.Recipes
+                    },
+                    onStop = { scope.launch { container.setActiveCook(null) } },
+                )
+            }
             // On the tablet the rail leaves the bottom edge to the system bar, so pad for it there.
             TimerTray(container.timers, if (isWide()) Modifier.navigationBarsPadding() else Modifier)
         }

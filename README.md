@@ -40,7 +40,7 @@ your own Mealie server.
   from protein and style tags (see [the cookbook scheme](#the-cookbook-categories-and-tags)). Sort by name, newest, rating,
   quickest or "not made in a while", or let the dice pick something.
 - **Cook mode ("Let's cook!").** Large text, screen stays awake, tap step numbers to check them off, and each step shows the ingredients it needs
-  ("You'll need") while the full ingredient list tucks neatly at the top on phones. When you finish, YesChef offers to mark the recipe as cooked. Starting it, for one
+  ("You'll need") while the full ingredient list tucks neatly at the top on phones. Switching to Shopping, Meal plan, or another recipe keeps your cook session alive (with checked ingredients, completed steps, scaling, and step position intact) and pins a one-tap **Return** bar above the timers. When you finish, YesChef offers to mark the recipe as cooked. Starting it, for one
   recipe or a whole meal, plays a one-second scene picked at random: a wok tossing stir-fry, a
   cleaver chopping a carrot, or a pot steaming. Tap to skip; it's off when animations are turned off
   on the phone. In whole-meal cook mode, you can check off steps as you finish them, nudge the

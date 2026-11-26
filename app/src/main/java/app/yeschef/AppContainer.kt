@@ -5,6 +5,7 @@ import app.yeschef.data.Repository
 import app.yeschef.data.ServerConfig
 import app.yeschef.data.ThemeMode
 import app.yeschef.data.SettingsStore
+import app.yeschef.data.cook.ActiveCookSession
 import app.yeschef.data.cook.MealReminders
 import app.yeschef.data.cook.TimerManager
 import app.yeschef.data.local.YesChefDb
@@ -30,6 +31,23 @@ class AppContainer(context: Context) {
 
     private val _theme = MutableStateFlow(runBlocking { settings.themeMode.first() })
     val themeMode: StateFlow<ThemeMode> = _theme.asStateFlow()
+
+    /** Currently active single-recipe cook session, surviving tab switches and restarts. */
+    private val _activeCook = MutableStateFlow(runBlocking { settings.activeCook.first() })
+    val activeCook: StateFlow<ActiveCookSession?> = _activeCook.asStateFlow()
+
+    suspend fun setActiveCook(session: ActiveCookSession?) {
+        _activeCook.value = session
+        settings.saveActiveCook(session)
+    }
+
+    suspend fun updateActiveCook(change: (ActiveCookSession) -> ActiveCookSession) {
+        val current = _activeCook.value ?: return
+        val next = change(current)
+        if (next == current) return
+        _activeCook.value = next
+        settings.saveActiveCook(next)
+    }
 
     suspend fun setTheme(mode: ThemeMode) {
         settings.saveTheme(mode)
@@ -77,6 +95,7 @@ class AppContainer(context: Context) {
     suspend fun signOut() {
         settings.clear()
         _config.value = null
+        _activeCook.value = null
         withContext(Dispatchers.IO) { db.clearAllTables() }
     }
 }
