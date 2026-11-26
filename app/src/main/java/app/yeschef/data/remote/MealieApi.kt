@@ -92,6 +92,15 @@ interface MealieApi {
     @POST("recipes/timeline/events")
     suspend fun createTimelineEvent(@Body body: JsonObject): ResponseBody
 
+    /** Reads timeline entries for one recipe (newest first). */
+    @GET("recipes/timeline/events")
+    suspend fun timelineEvents(
+        @Query("queryFilter") queryFilter: String,
+        @Query("perPage") perPage: Int = 20,
+        @Query("orderBy") orderBy: String = "timestamp",
+        @Query("orderDirection") orderDirection: String = "desc",
+    ): Page<TimelineEventDto>
+
     /** Records that the recipe was cooked ("I made this" in Mealie). */
     @PATCH("recipes/{slug}/last-made")
     suspend fun setLastMade(@Path("slug") slug: String, @Body body: LastMadeBody): ResponseBody

@@ -14,6 +14,7 @@ import app.yeschef.data.remote.MealieJson
 import app.yeschef.data.remote.NewShoppingItem
 import app.yeschef.data.remote.RecipeDetailDto
 import app.yeschef.data.remote.ShoppingItemDto
+import app.yeschef.data.remote.TimelineEventDto
 import app.yeschef.data.remote.ParseIngredientsBody
 import app.yeschef.data.cook.scaleIngredient
 import app.yeschef.data.cook.CookNotes
@@ -302,10 +303,26 @@ class Repository(
 
     /**
      * Saves cook-mode notes to the recipe's timeline in Mealie as one "Cook notes" entry.
-     * Queued like other edits, so it works offline and goes with the next sync.
+     * Queued like other edits, so it works offline and goes with the next sync, and shown
+     * right away in the recipe's local cook log.
      */
     suspend fun saveCookNotes(recipeId: String, message: String) {
-        val note = TimelineNote(java.time.OffsetDateTime.now().toString(), message)
+        val now = java.time.OffsetDateTime.now().toString()
+        val note = TimelineNote(now, message)
+        db.recipes().byId(recipeId)?.let { entity ->
+            val current = entity.detailJson?.let { runCatching { MealieJson.decodeFromString<RecipeDetailDto>(it) }.getOrNull() }
+            if (current != null) {
+                val entry = TimelineEventDto(
+                    id = "local-" + UUID.randomUUID(),
+                    recipeId = recipeId,
+                    subject = CookNotes.SUBJECT,
+                    eventType = "comment",
+                    eventMessage = message,
+                    timestamp = now,
+                )
+                db.recipes().setDetail(entity.slug, MealieJson.encodeToString(current.copy(timeline = listOf(entry) + current.timeline)))
+            }
+        }
         db.shopping().enqueue(
             PendingOpEntity(kind = PendingOpEntity.COOK_NOTES, itemId = recipeId, listId = MealieJson.encodeToString(note)),
         )
@@ -592,7 +609,11 @@ class Repository(
 
     private suspend fun cacheDetail(api: MealieApi, slug: String) {
         val detail = api.recipe(slug)
-        db.recipes().setDetail(slug, MealieJson.encodeToString(detail))
+        val events = runCatching {
+            api.timelineEvents(queryFilter = "recipeId=\"${detail.id}\"").items
+                .filter { !it.eventMessage.isNullOrBlank() }
+        }.getOrDefault(emptyList())
+        db.recipes().setDetail(slug, MealieJson.encodeToString(detail.copy(timeline = events)))
     }
 
     private suspend fun pushPending(api: MealieApi) {

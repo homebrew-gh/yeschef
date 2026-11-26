@@ -4,7 +4,14 @@ import app.yeschef.data.cook.CookNote
 import app.yeschef.data.cook.CookNotes
 import app.yeschef.ui.recipes.CookNoteButton
 import app.yeschef.ui.recipes.CookNoteDialog
+import app.yeschef.ui.recipes.MealCookNotesReviewContent
 import app.yeschef.ui.recipes.rememberDictation
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
@@ -163,6 +170,7 @@ fun mealInputs(recipes: List<MealRecipeView>): List<MealRecipeIn> = recipes.map 
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () -> Unit) {
     val repo = container.repository
@@ -230,16 +238,28 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
         }
     }.collectAsStateWithLifecycle(emptyMap())
     val noteCount = notesByRecipe.values.sumOf { it.size }
+    val snackbar = remember { SnackbarHostState() }
     var noteFor by remember { mutableStateOf<MealNoteTarget?>(null) }
     var choosingNote by rememberSaveable { mutableStateOf(false) }
     var typingNote by rememberSaveable { mutableStateOf(false) }
+    var editingMealNote by remember { mutableStateOf<Pair<String, CookNote>?>(null) }
+    var reviewingNotes by rememberSaveable { mutableStateOf(false) }
+    var markCookedOnReview by rememberSaveable { mutableStateOf(true) }
     fun addNote(text: String) {
         val target = noteFor ?: return
         val step = target.step?.let { target.recipe.detail?.recipeInstructions?.getOrNull(it) }
         val label = step?.let { CookNotes.stepLabel(it.summary?.takeIf { t -> t.isNotBlank() } ?: it.title, it.text) }
         val note = CookNote(at = System.currentTimeMillis(), text = text, step = target.step?.plus(1), stepLabel = label)
         val id = target.recipe.detail?.id ?: return
-        scope.launch { container.settings.updateCookNotes(id) { it + note } }
+        scope.launch {
+            container.settings.updateCookNotes(id) { it + note }
+            val res = snackbar.showSnackbar(
+                message = "Saved: \"${CookNotes.snippet(text)}\"",
+                actionLabel = "Edit",
+                duration = SnackbarDuration.Short,
+            )
+            if (res == SnackbarResult.ActionPerformed) editingMealNote = id to note
+        }
     }
     val dictate = rememberDictation(
         prompt = { noteFor?.let { t -> t.recipe.name + (t.step?.let { ", step ${it + 1}" } ?: "") } ?: "Cooking note" },
@@ -255,6 +275,21 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
             initial = "",
             onDismiss = { typingNote = false },
             onSave = { typingNote = false; addNote(it) },
+        )
+    }
+    editingMealNote?.let { (recipeId, editing) ->
+        CookNoteDialog(
+            title = "Edit note",
+            initial = editing.text,
+            onDismiss = { editingMealNote = null },
+            onSave = { text ->
+                editingMealNote = null
+                scope.launch {
+                    container.settings.updateCookNotes(recipeId) { list ->
+                        list.map { if (it.at == editing.at) it.copy(text = text) else it }
+                    }
+                }
+            },
         )
     }
     if (choosingNote) {
@@ -279,13 +314,16 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
             confirmButton = { TextButton(onClick = { choosingNote = false }) { Text("Cancel") } },
         )
     }
-    // Save each recipe's notes to Mealie and clear them from the phone.
+    // Save each recipe's notes to Mealie (with the other dishes as context) and clear them from the phone.
     fun saveNotes() {
         val pending = notesByRecipe.filterValues { it.isNotEmpty() }
         if (pending.isEmpty()) return
+        val namesById = cookable.mapNotNull { r -> r.detail?.id?.let { it to r.name } }.toMap()
         scope.launch {
             pending.forEach { (id, notes) ->
-                repo.saveCookNotes(id, CookNotes.message(notes) { clockText(it) })
+                val others = namesById.filterKeys { it != id }.values.toList()
+                val contextLines = listOfNotNull(CookNotes.mealContext(others))
+                repo.saveCookNotes(id, CookNotes.message(notes, { clockText(it) }, contextLines))
                 container.settings.updateCookNotes(id) { emptyList() }
             }
             SyncScheduler.requestSync(context)
@@ -293,20 +331,53 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
     }
 
     var askEnd by rememberSaveable { mutableStateOf(false) }
+    if (reviewingNotes && noteCount > 0) {
+        val groups = cookable.mapNotNull { r ->
+            val id = r.detail?.id ?: return@mapNotNull null
+            Triple(id, r.name, notesByRecipe[id].orEmpty())
+        }
+        ModalBottomSheet(onDismissRequest = { reviewingNotes = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+            MealCookNotesReviewContent(
+                groups = groups,
+                clock = { clockText(it) },
+                markCooked = markCookedOnReview,
+                onMarkCooked = { markCookedOnReview = it },
+                onEdit = { id, note -> editingMealNote = id to note },
+                onDelete = { id, gone ->
+                    scope.launch {
+                        container.settings.updateCookNotes(id) { list -> list.filterNot { it.at == gone.at } }
+                    }
+                },
+                onKeep = {
+                    reviewingNotes = false
+                    reminders.end()
+                    onClose()
+                },
+                onSave = {
+                    reviewingNotes = false
+                    saveNotes()
+                    if (markCookedOnReview) {
+                        scope.launch {
+                            request.slugs.forEach { repo.markCooked(it) }
+                            SyncScheduler.requestSync(context)
+                        }
+                    }
+                    reminders.end()
+                    onClose()
+                },
+            )
+        }
+    }
     if (askEnd) {
         AlertDialog(
             onDismissRequest = { askEnd = false },
             title = { Text("Stop this meal?") },
             text = {
-                Text(
-                    "Reminders for it stop. Mark every recipe in it as cooked today?" +
-                        if (noteCount > 0) "\n\nYour cooking notes are saved to their recipes in Mealie either way." else "",
-                )
+                Text("Reminders for it stop. Mark every recipe in it as cooked today?")
             },
             confirmButton = {
                 TextButton(onClick = {
                     askEnd = false
-                    saveNotes()
                     scope.launch {
                         request.slugs.forEach { repo.markCooked(it) }
                         SyncScheduler.requestSync(context)
@@ -316,7 +387,7 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
                 }) { Text("Yes, we ate") }
             },
             dismissButton = {
-                TextButton(onClick = { askEnd = false; saveNotes(); reminders.end(); onClose() }) { Text("Just stop") }
+                TextButton(onClick = { askEnd = false; reminders.end(); onClose() }) { Text("Just stop") }
             },
         )
     }
@@ -347,7 +418,14 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
         onPickTime = { picking = true },
         onUseEarliest = { chosenReadyAt = earliestReadyAt(timeline.leadSeconds, System.currentTimeMillis()) },
         onStart = { begin(readyAt) },
-        onFinish = { askEnd = true },
+        onFinish = {
+            if (noteCount > 0) {
+                markCookedOnReview = true
+                reviewingNotes = true
+            } else {
+                askEnd = true
+            }
+        },
         onBack = onClose,
         onStartTimer = { recipe, label, seconds -> startTimer(label, seconds, recipe.slug, recipe.name) },
         onKitchenTools = { kitchenTools.open = true },
@@ -360,6 +438,7 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
                 choosingNote = true
             }
         }) else null,
+        snackbarHostState = snackbar,
     )
 }
 
@@ -401,6 +480,7 @@ fun CookMealContent(
     openDishes: Set<String> = emptySet(),
     noteCount: Int = 0,
     onAddNote: (() -> Unit)? = null,
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
     val colors = MaterialTheme.colorScheme
     val startAt = readyAt - timeline.leadSeconds * 1000
@@ -445,6 +525,7 @@ fun CookMealContent(
             )
         },
         containerColor = colors.background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = { if (onAddNote != null) CookNoteButton(noteCount, onAddNote) },
     ) { padding ->
         LazyColumn(

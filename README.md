@@ -184,11 +184,11 @@ table above into your assistant's instructions and give it access to Mealie's AP
 
 ## Cooking notes
 
-In cook mode, the mic button takes a quick spoken note with Android's own speech recognizer (on the phone, offline when your phone supports it; no server model needed). Each note records the time and the step on screen. If the phone has no speech recognizer, the button opens a box to type in instead.
+In cook mode, the mic button takes a quick spoken note with Android's own speech recognizer (on the phone, offline when your phone supports it; no server model needed). Each note records the time and the step on screen, and a brief snackbar previews what was heard with an **Edit** shortcut. If the phone has no speech recognizer, the button opens a box to type in instead.
 
-Notes stay on the phone, even if the app is closed, until you leave cook mode. Then YesChef shows them so you can fix, delete or add to them, and **Save to Mealie** adds them to the recipe's timeline as one "Cook notes" entry (and, if ticked, marks the recipe as cooked). Like other edits, this works offline and goes with the next sync. **Keep for later** leaves them on the phone, and the recipe page shows a button to save them.
+Notes stay on the phone, even if the app is closed, until you leave cook mode (or finish a whole-meal cook). Then YesChef shows them so you can fix, delete or add to them, and **Save to Mealie** adds them to each recipe's timeline as one "Cook notes" entry (noting the scaled servings or co-cooked dishes when relevant, and marking the recipe as cooked if ticked). Like other edits, this works offline and goes with the next sync. **Keep for later** leaves them on the phone, and the recipe page shows a button to save them.
 
-With the [mealie-startos](https://github.com/homebrew-gh/mealie-startos) AI connector, ask your assistant something like "review today's cooking notes and suggest fixes": its `list_cook_notes` tool reads them, and it can update the recipe once you agree.
+On a recipe page, permanent recipe **Notes** and dated **Cook log** entries sit collapsed at the bottom so they stay out of the way while cooking, with a quiet **Add a cooking note** button for thoughts after dinner. With the [mealie-startos](https://github.com/homebrew-gh/mealie-startos) AI connector, ask your assistant something like "review my recent cooking notes and suggest fixes": its `list_cook_notes` tool reads them, and it can update the recipe once you agree.
 
 ## Scaling and nutrition
 

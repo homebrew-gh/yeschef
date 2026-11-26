@@ -43,4 +43,21 @@ class CookNotesTest {
         assertEquals(4, CookNotes.stepInView(listOf(Triple(4, -500, 600)), 0))
         assertNull(CookNotes.stepInView(emptyList(), 0))
     }
+
+    @Test fun messagePrependsScaleAndMealContextLines() {
+        val notes = listOf(CookNote(at = 42 * 60_000L, text = "Needed 5 more minutes", step = 2, stepLabel = "Bake"))
+        val context = listOfNotNull(
+            CookNotes.scaleContext(1.5, 4.0),
+            CookNotes.mealContext(listOf("Garlic Mashed Potatoes", "Roasted Asparagus")),
+        )
+        assertEquals(
+            "Cooked at 6 servings (×1½)\n" +
+                "Cooked with: Garlic Mashed Potatoes, Roasted Asparagus\n" +
+                "- 6:42 PM, step 2 (Bake): Needed 5 more minutes",
+            CookNotes.message(notes, clock, context),
+        )
+        assertNull(CookNotes.scaleContext(1.0, 4.0))
+        assertEquals("Cooked at ×2", CookNotes.scaleContext(2.0, null))
+        assertNull(CookNotes.mealContext(emptyList()))
+    }
 }
