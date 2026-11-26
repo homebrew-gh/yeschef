@@ -3,6 +3,7 @@ package app.yeschef.ui.cook
 import app.yeschef.data.cook.CookNote
 import app.yeschef.data.cook.CookNotes
 import app.yeschef.ui.recipes.CookNoteButton
+import app.yeschef.ui.recipes.CookNotesTopBarButton
 import app.yeschef.ui.recipes.CookNoteDialog
 import app.yeschef.ui.recipes.MealCookNotesReviewContent
 import app.yeschef.ui.recipes.rememberDictation
@@ -283,6 +284,7 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
     var typingNote by rememberSaveable { mutableStateOf(false) }
     var editingMealNote by remember { mutableStateOf<Pair<String, CookNote>?>(null) }
     var reviewingNotes by rememberSaveable { mutableStateOf(false) }
+    var reviewingMidCook by rememberSaveable { mutableStateOf(false) }
     var markCookedOnReview by rememberSaveable { mutableStateOf(true) }
     fun addNote(text: String) {
         val target = noteFor ?: return
@@ -396,20 +398,27 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
                 },
                 onKeep = {
                     reviewingNotes = false
-                    reminders.end()
-                    onClose()
+                    if (!reviewingMidCook) {
+                        reminders.end()
+                        onClose()
+                    }
                 },
+                midCook = reviewingMidCook,
                 onSave = {
                     reviewingNotes = false
                     saveNotes()
-                    if (markCookedOnReview) {
-                        scope.launch {
-                            request.slugs.forEach { repo.markCooked(it) }
-                            SyncScheduler.requestSync(context)
+                    if (!reviewingMidCook) {
+                        if (markCookedOnReview) {
+                            scope.launch {
+                                request.slugs.forEach { repo.markCooked(it) }
+                                SyncScheduler.requestSync(context)
+                            }
                         }
+                        reminders.end()
+                        onClose()
+                    } else {
+                        scope.launch { snackbar.showSnackbar("Notes saved to Mealie") }
                     }
-                    reminders.end()
-                    onClose()
                 },
             )
         }
@@ -480,6 +489,7 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
         },
         onFinish = {
             if (noteCount > 0) {
+                reviewingMidCook = false
                 markCookedOnReview = true
                 reviewingNotes = true
             } else {
@@ -500,6 +510,11 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
             } else {
                 choosingNote = true
             }
+        }) else null,
+        onReviewNotes = if (noteCount > 0) ({
+            reviewingMidCook = true
+            markCookedOnReview = false
+            reviewingNotes = true
         }) else null,
         snackbarHostState = snackbar,
     )
@@ -550,6 +565,7 @@ fun CookMealContent(
     activeTimers: List<CookTimer> = emptyList(),
     noteCount: Int = 0,
     onAddNote: (() -> Unit)? = null,
+    onReviewNotes: (() -> Unit)? = null,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
     val colors = MaterialTheme.colorScheme
@@ -782,6 +798,9 @@ fun CookMealContent(
                 title = title,
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
                 actions = {
+                    if (onReviewNotes != null) {
+                        CookNotesTopBarButton(noteCount, onReviewNotes)
+                    }
                     if (onKitchenTools != null) {
                         IconButton(onClick = onKitchenTools) { Icon(Icons.Filled.Scale, "Kitchen tools: converter and reference") }
                     }

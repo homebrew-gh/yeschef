@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Mic
@@ -320,6 +321,17 @@ fun CookNoteButton(count: Int, onClick: () -> Unit) {
     }
 }
 
+/** Top-bar button shown during cook mode once at least one note has been taken. */
+@Composable
+fun CookNotesTopBarButton(count: Int, onClick: () -> Unit) {
+    if (count <= 0) return
+    IconButton(onClick = onClick) {
+        BadgedBox(badge = { Badge { Text("$count") } }) {
+            Icon(Icons.AutoMirrored.Filled.Notes, contentDescription = "Review cooking notes ($count)")
+        }
+    }
+}
+
 /** Type a note, or fix one. */
 @Composable
 fun CookNoteDialog(title: String, initial: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
@@ -357,6 +369,7 @@ fun CookNotesReviewContent(
     onAdd: () -> Unit,
     onSave: () -> Unit,
     onKeep: () -> Unit,
+    midCook: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -367,7 +380,11 @@ fun CookNotesReviewContent(
             modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp),
         )
         Text(
-            "Saved to $recipeName's timeline in Mealie. Ask your assistant to review them and suggest changes for next time.",
+            if (midCook) {
+                "Notes taken so far for $recipeName. Edit or delete any slips, or save them to Mealie now."
+            } else {
+                "Saved to $recipeName's timeline in Mealie. Ask your assistant to review them and suggest changes for next time."
+            },
             style = MaterialTheme.typography.bodyMedium,
             color = colors.onSurfaceVariant,
             modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 12.dp),
@@ -395,19 +412,21 @@ fun CookNotesReviewContent(
             }
         }
         TextButton(onClick = onAdd, modifier = Modifier.padding(start = 8.dp)) { Text("Type a note") }
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Checkbox(checked = markCooked, onCheckedChange = onMarkCooked)
-            Text("Also mark as cooked today", style = MaterialTheme.typography.bodyLarge)
+        if (!midCook) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(checked = markCooked, onCheckedChange = onMarkCooked)
+                Text("Also mark as cooked today", style = MaterialTheme.typography.bodyLarge)
+            }
         }
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TextButton(onClick = onKeep) { Text("Keep for later") }
+            TextButton(onClick = onKeep) { Text(if (midCook) "Keep cooking" else "Keep for later") }
             Spacer(Modifier.width(8.dp))
             Button(onClick = onSave, enabled = notes.any { it.text.isNotBlank() }) { Text("Save to Mealie") }
         }
@@ -428,6 +447,7 @@ fun MealCookNotesReviewContent(
     onDelete: (recipeId: String, note: CookNote) -> Unit,
     onSave: () -> Unit,
     onKeep: () -> Unit,
+    midCook: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -439,7 +459,11 @@ fun MealCookNotesReviewContent(
             modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp),
         )
         Text(
-            "Saved to each recipe's timeline in Mealie.",
+            if (midCook) {
+                "Notes taken so far. Edit or delete any slips, or save them to Mealie now."
+            } else {
+                "Saved to each recipe's timeline in Mealie."
+            },
             style = MaterialTheme.typography.bodyMedium,
             color = colors.onSurfaceVariant,
             modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 12.dp),
@@ -474,19 +498,21 @@ fun MealCookNotesReviewContent(
                 }
             }
         }
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Checkbox(checked = markCooked, onCheckedChange = onMarkCooked)
-            Text("Also mark recipes as cooked today", style = MaterialTheme.typography.bodyLarge)
+        if (!midCook) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(checked = markCooked, onCheckedChange = onMarkCooked)
+                Text("Also mark recipes as cooked today", style = MaterialTheme.typography.bodyLarge)
+            }
         }
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TextButton(onClick = onKeep) { Text("Keep for later") }
+            TextButton(onClick = onKeep) { Text(if (midCook) "Keep cooking" else "Keep for later") }
             Spacer(Modifier.width(8.dp))
             Button(
                 onClick = onSave,

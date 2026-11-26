@@ -260,6 +260,7 @@ fun RecipeDetailScreen(
     var typingNote by rememberSaveable { mutableStateOf(false) }
     var editingNoteAt by rememberSaveable { mutableStateOf<Long?>(null) }
     var reviewingNotes by rememberSaveable { mutableStateOf(false) }
+    var reviewingMidCook by rememberSaveable { mutableStateOf(false) }
     var markCookedToo by rememberSaveable { mutableStateOf(true) }
     // Deleting the last note closes the review; a later note shouldn't reopen it.
     LaunchedEffect(cookNotes.isEmpty()) { if (cookNotes.isEmpty()) reviewingNotes = false }
@@ -270,6 +271,7 @@ fun RecipeDetailScreen(
         val note = CookNote(at = noteAt, text = text, step = step?.plus(1), stepLabel = label)
         changeNotes { it + note }
         if (!cookMode && !reviewingNotes) {
+            reviewingMidCook = false
             markCookedToo = false
             reviewingNotes = true
         } else if (!reviewingNotes) {
@@ -328,12 +330,13 @@ fun RecipeDetailScreen(
                     typingNote = true
                 },
                 onKeep = { reviewingNotes = false },
+                midCook = reviewingMidCook,
                 onSave = {
                     reviewingNotes = false
                     val base = detail?.let { baseServings(it.recipeServings, it.recipeYield) }
                     val contextLines = listOfNotNull(CookNotes.scaleContext(currentScale, base))
                     val message = CookNotes.message(cookNotes, { clockText(it) }, contextLines)
-                    val cooked = markCookedToo
+                    val cooked = !reviewingMidCook && markCookedToo
                     scope.launch {
                         repo.saveCookNotes(noteId, message)
                         if (cooked) repo.markCooked(slug)
@@ -351,6 +354,7 @@ fun RecipeDetailScreen(
     fun leaveCookMode() {
         scope.launch { container.setActiveCook(null) }
         if (cookNotes.isNotEmpty()) {
+            reviewingMidCook = false
             markCookedToo = false
             reviewingNotes = true
         }
@@ -529,6 +533,7 @@ fun RecipeDetailScreen(
         onFinishCooking = {
             scope.launch { container.setActiveCook(null) }
             if (cookNotes.isNotEmpty()) {
+                reviewingMidCook = false
                 markCookedToo = true
                 reviewingNotes = true
             } else {
@@ -576,7 +581,11 @@ fun RecipeDetailScreen(
         onPickPhoto = { pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
         noteCount = cookNotes.size,
         onAddNote = if (noteId != null) ({ step -> startNote(step) }) else null,
-        onReviewNotes = if (noteId != null && cookNotes.isNotEmpty()) ({ reviewingNotes = true }) else null,
+        onReviewNotes = if (noteId != null && cookNotes.isNotEmpty()) ({
+            reviewingMidCook = cookMode
+            if (cookMode) markCookedToo = false
+            reviewingNotes = true
+        }) else null,
         onScaleChanged = { currentScale = it },
         snackbarHostState = snackbar,
     )
@@ -668,6 +677,9 @@ fun RecipeDetailContent(
                     // Kitchen tools and custom timers belong in cook mode; reading mode stays calm
                     // with just "Let's cook!" and the overflow menu (Edit, Share, Print).
                     if (cookMode) {
+                        if (onReviewNotes != null) {
+                            CookNotesTopBarButton(noteCount, onReviewNotes)
+                        }
                         if (onKitchenTools != null) {
                             IconButton(onClick = onKitchenTools) { Icon(Icons.Filled.Scale, "Kitchen tools: converter and reference") }
                         }

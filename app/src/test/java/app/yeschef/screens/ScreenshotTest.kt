@@ -584,6 +584,7 @@ private fun Detail(cookMode: Boolean, withBack: Boolean = true, servings: Double
     onPickPhoto = {},
     noteCount = if (cookMode) 2 else 0,
     onAddNote = { },
+    onReviewNotes = if (cookMode) ({}) else null,
 )
 
 @Composable
@@ -612,6 +613,7 @@ private fun Meal(started: Boolean, now: Long, openFirst: Boolean = false, paused
         openDishes = if (openFirst) setOf(views.first().slug) else emptySet(),
         noteCount = if (started) 1 else 0,
         onAddNote = {},
+        onReviewNotes = if (started) ({}) else null,
     )
 }
 
