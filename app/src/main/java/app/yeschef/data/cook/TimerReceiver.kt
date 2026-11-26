@@ -14,9 +14,11 @@ class TimerReceiver : BroadcastReceiver() {
         when (intent.action) {
             ACTION_MEAL_STEP -> container.mealReminders.fire(id)
             ACTION_FIRE -> timers.fire(id)
+            ACTION_CHECKPOINT -> timers.fireCheckpoint(id)
             ACTION_PAUSE -> timers.pause(id)
             ACTION_RESUME -> timers.resume(id)
             ACTION_ADD_MINUTE -> timers.addMinute(id)
+            ACTION_ADD_RANGE -> timers.extendToMax(id)
             ACTION_DISMISS -> timers.dismiss(id)
         }
     }
@@ -24,9 +26,11 @@ class TimerReceiver : BroadcastReceiver() {
     companion object {
         const val EXTRA_ID = "timer_id"
         const val ACTION_FIRE = "app.yeschef.timer.FIRE"
+        const val ACTION_CHECKPOINT = "app.yeschef.timer.CHECKPOINT"
         const val ACTION_PAUSE = "app.yeschef.timer.PAUSE"
         const val ACTION_RESUME = "app.yeschef.timer.RESUME"
         const val ACTION_ADD_MINUTE = "app.yeschef.timer.ADD_MINUTE"
+        const val ACTION_ADD_RANGE = "app.yeschef.timer.ADD_RANGE"
         const val ACTION_DISMISS = "app.yeschef.timer.DISMISS"
         const val ACTION_MEAL_STEP = "app.yeschef.meal.STEP"
     }
