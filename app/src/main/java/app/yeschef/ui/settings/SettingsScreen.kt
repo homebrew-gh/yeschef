@@ -24,6 +24,7 @@ import app.yeschef.data.ThemeMode
 import app.yeschef.ui.setup.describe
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -35,11 +36,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -61,6 +64,7 @@ fun SettingsScreen(container: AppContainer) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val theme by container.themeMode.collectAsStateWithLifecycle()
+    val shakeToRoll by container.settings.shakeToRoll.collectAsStateWithLifecycle(true)
     var editServer by rememberSaveable { mutableStateOf(false) }
     if (editServer) {
         config?.let { current -> ServerDialog(container, current) { editServer = false } }
@@ -77,6 +81,24 @@ fun SettingsScreen(container: AppContainer) {
             SectionLabel("Appearance")
             Card {
                 ThemePicker(theme) { mode -> scope.launch { container.setTheme(mode) } }
+            }
+
+            SectionLabel("Cookbook")
+            Card {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Shake to roll the dice", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Shake on the Cookbook page to pick a chapter, then shake again to roll a random recipe.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = shakeToRoll,
+                        onCheckedChange = { on -> scope.launch { container.settings.saveShakeToRoll(on) } },
+                    )
+                }
             }
 
             SectionLabel("Sync")

@@ -3,8 +3,12 @@ package app.yeschef.ui.recipes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -12,6 +16,8 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -20,12 +26,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -61,6 +71,108 @@ import kotlin.random.Random
 private const val TUMBLE_MS = 1000
 
 /**
+ * First step of the dice roll: a gently wobbling die and chapter pills so you can pick which
+ * section to roll from, then shake again (or tap Roll) to tumble the die.
+ */
+@Composable
+fun DicePickerDialog(
+    choices: List<Pair<String?, Int>>,
+    selected: String?,
+    shakeHint: Boolean,
+    onSelect: (String?) -> Unit,
+    onRoll: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val reduceMotion = rememberReduceMotion()
+    val haptics = LocalHapticFeedback.current
+    LaunchedEffect(Unit) { haptics.performHapticFeedback(HapticFeedbackType.LongPress) }
+    val wobble = if (reduceMotion) 0f else {
+        val transition = rememberInfiniteTransition(label = "die-wobble")
+        transition.animateFloat(
+            initialValue = -10f,
+            targetValue = 10f,
+            animationSpec = infiniteRepeatable(tween(420, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+            label = "die-tilt",
+        ).value
+    }
+
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Column(
+            Modifier.widthIn(max = 360.dp).fillMaxWidth().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Die(
+                5,
+                Modifier.size(80.dp).graphicsLayer { rotationZ = wobble },
+            )
+            Spacer(Modifier.height(18.dp))
+            DicePickerCard(
+                choices = choices,
+                selected = selected,
+                shakeHint = shakeHint,
+                onSelect = onSelect,
+                onRoll = onRoll,
+                onDismiss = onDismiss,
+            )
+        }
+    }
+}
+
+/** Chapter picker card shown under the wobbling die; public for screenshots. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun DicePickerCard(
+    choices: List<Pair<String?, Int>>,
+    selected: String?,
+    shakeHint: Boolean,
+    onSelect: (String?) -> Unit,
+    onRoll: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    Card(
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(containerColor = colors.surfaceContainerLow),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Roll the dice", style = MaterialTheme.typography.headlineSmall, color = colors.onSurface)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                if (shakeHint) "Pick a chapter, then shake again to roll" else "Pick a chapter to roll from",
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(14.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                choices.forEach { (chapter, count) ->
+                    FilterChip(
+                        selected = chapter == selected,
+                        onClick = { onSelect(chapter) },
+                        label = { Text("${chapter ?: "Anything"} ($count)") },
+                        shape = CircleShape,
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = colors.tertiaryContainer,
+                            selectedLabelColor = colors.onTertiaryContainer,
+                        ),
+                    )
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(onClick = onDismiss) { Text("Cancel") }
+                Button(onClick = onRoll) { Text("Roll") }
+            }
+        }
+    }
+}
+
+/**
  * The dice roll: a die tumbles and bounces for about a second, lands, and the picked recipe
  * pops up under it. With animations turned off on the phone, the recipe shows straight away.
  * [roll] changes on every roll, so "Roll again" plays it again.
@@ -74,6 +186,8 @@ fun DiceRollDialog(
     onOpen: () -> Unit,
     onRollAgain: () -> Unit,
     onDismiss: () -> Unit,
+    onChangeChapter: (() -> Unit)? = null,
+    onLandedChanged: ((Boolean) -> Unit)? = null,
 ) {
     val reduceMotion = rememberReduceMotion()
     val haptics = LocalHapticFeedback.current
@@ -82,6 +196,7 @@ fun DiceRollDialog(
     val spin = remember(roll) { Animatable(0f) }
     val hop = remember(roll) { Animatable(0f) }
     val squash = remember(roll) { Animatable(1f) }
+    LaunchedEffect(landed) { onLandedChanged?.invoke(landed) }
 
     LaunchedEffect(roll) {
         if (reduceMotion) return@LaunchedEffect
@@ -139,7 +254,7 @@ fun DiceRollDialog(
                     scaleIn(spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow), initialScale = 0.4f) +
                         fadeIn(tween(150)),
             ) {
-                RolledCard(recipe, serverUrl, today, onOpen, onRollAgain)
+                RolledCard(recipe, serverUrl, today, onOpen, onRollAgain, onChangeChapter)
             }
             // Keep the space while the die is tumbling so it doesn't jump when the card arrives.
             if (!landed) Spacer(Modifier.height(320.dp))
@@ -149,7 +264,14 @@ fun DiceRollDialog(
 
 /** The recipe card that pops up once the die lands; public for screenshots. */
 @Composable
-fun RolledCard(recipe: RecipeEntity, serverUrl: String?, today: LocalDate, onOpen: () -> Unit, onRollAgain: () -> Unit) {
+fun RolledCard(
+    recipe: RecipeEntity,
+    serverUrl: String?,
+    today: LocalDate,
+    onOpen: () -> Unit,
+    onRollAgain: () -> Unit,
+    onChangeChapter: (() -> Unit)? = null,
+) {
     val colors = MaterialTheme.colorScheme
     Card(
         shape = MaterialTheme.shapes.extraLarge,
@@ -182,6 +304,11 @@ fun RolledCard(recipe: RecipeEntity, serverUrl: String?, today: LocalDate, onOpe
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedButton(onClick = onRollAgain) { Text("Roll again") }
                 Button(onClick = onOpen) { Text("Let's cook") }
+            }
+            if (onChangeChapter != null) {
+                TextButton(onClick = onChangeChapter, modifier = Modifier.padding(top = 2.dp)) {
+                    Text("Change chapter")
+                }
             }
         }
     }

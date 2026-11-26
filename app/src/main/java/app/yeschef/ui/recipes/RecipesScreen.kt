@@ -10,7 +10,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Casino
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
@@ -108,6 +107,7 @@ fun RecipesScreen(container: AppContainer, openSlug: String?, onOpen: (String?) 
     val kitchenTools = rememberKitchenToolsState()
     KitchenToolsSheet(kitchenTools)
     val diceChapter by container.settings.diceChapter.collectAsStateWithLifecycle(Cookbook.DICE_DEFAULT)
+    val shakeToRoll by container.settings.shakeToRoll.collectAsStateWithLifecycle(true)
     val scope = rememberCoroutineScope()
     val list: @Composable (Modifier) -> Unit = { modifier ->
         RecipeGrid(
@@ -122,6 +122,8 @@ fun RecipesScreen(container: AppContainer, openSlug: String?, onOpen: (String?) 
             onAdd = { adding = "" },
             diceChapter = diceChapter,
             onDiceChapter = { scope.launch { container.settings.saveDiceChapter(it) } },
+            shakeToRoll = shakeToRoll,
+            canShake = adding == null && !kitchenTools.open,
         )
     }
     // A recipe opens full screen with a back arrow, on the tablet as well as the phone.
@@ -147,6 +149,10 @@ fun RecipeGrid(
     initialProtein: String? = null,
     diceChapter: String? = Cookbook.DICE_DEFAULT,
     onDiceChapter: (String?) -> Unit = {},
+    /** Enables shaking the device on the Cookbook page to pick a chapter and roll the dice. */
+    shakeToRoll: Boolean = true,
+    /** False while another sheet is open over the Cookbook so shakes don't trigger underneath. */
+    canShake: Boolean = true,
     /** Shows the + (add a recipe) button in the bottom-right corner. */
     onAdd: (() -> Unit)? = null,
 ) {
@@ -175,9 +181,31 @@ fun RecipeGrid(
     // Horizontal shelves in "All" chapter view eliminate half-empty rows; tapping a chapter or
     // picking another sort switches to the full grid.
     val shelfView = chapter == null && sort == Cookbook.Sort.Chapters && query.isBlank() && protein == null && style == null
-    // The recipe the dice landed on, shown in the roll animation; the count replays it on "Roll again".
+    // Dice roll: shake once on the Cookbook to open the chapter picker (pre-selecting the
+    // chapter you're viewing, or your last pick), then shake again (or tap Roll) to tumble.
+    val diceChoices = remember(recipes, query, protein, style) {
+        val matching = Cookbook.filter(recipes, query, null, protein, style)
+        if (matching.isEmpty()) emptyList()
+        else Cookbook.chapterOrder(matching).map { c -> c to matching.count { Cookbook.chapterOf(it) == c } } + (null to matching.size)
+    }
+    var pickingDice by rememberSaveable { mutableStateOf(false) }
+    var selectedRollChapter by rememberSaveable { mutableStateOf<String?>(null) }
     var rolledSlug by rememberSaveable { mutableStateOf<String?>(null) }
     var rollCount by rememberSaveable { mutableStateOf(0) }
+    var rollLanded by remember { mutableStateOf(true) }
+
+    fun openDicePicker() {
+        if (diceChoices.isEmpty()) return
+        val available = diceChoices.map { it.first }.toSet()
+        selectedRollChapter = when {
+            chapter != null && chapter in available -> chapter
+            diceChapter != null && diceChapter in available -> diceChapter
+            else -> null
+        }
+        rolledSlug = null
+        pickingDice = true
+    }
+
     fun roll(from: String?) {
         // Roll from the picked chapter; if the filters leave nothing there, from anything.
         fun draw() = Cookbook.surprise(recipes, query, from, protein, today, style = style)
@@ -185,29 +213,52 @@ fun RecipeGrid(
         // "Roll again" tries not to land on the same recipe twice running.
         var pick = draw() ?: return
         repeat(4) { if (pick.slug == rolledSlug) pick = draw() ?: pick }
+        selectedRollChapter = from
+        onDiceChapter(from)
+        pickingDice = false
+        rollLanded = false
         rolledSlug = pick.slug
         rollCount++
+    }
+
+    ShakeListener(enabled = shakeToRoll && canShake && diceChoices.isNotEmpty() && (rolledSlug == null || rollLanded)) {
+        when {
+            pickingDice -> roll(selectedRollChapter)
+            rolledSlug != null -> roll(selectedRollChapter)
+            else -> openDicePicker()
+        }
+    }
+
+    if (pickingDice && diceChoices.isNotEmpty()) {
+        DicePickerDialog(
+            choices = diceChoices,
+            selected = selectedRollChapter,
+            shakeHint = shakeToRoll && !wide,
+            onSelect = { selectedRollChapter = it },
+            onRoll = { roll(selectedRollChapter) },
+            onDismiss = { pickingDice = false },
+        )
     }
     recipes.firstOrNull { it.slug == rolledSlug }?.let { rolled ->
         DiceRollDialog(
             rolled, rollCount, serverUrl, today,
             onOpen = { rolledSlug = null; onOpen(rolled.slug) },
-            onRollAgain = { roll(diceChapter) },
+            onRollAgain = { roll(selectedRollChapter) },
             onDismiss = { rolledSlug = null },
+            onChangeChapter = { openDicePicker() },
+            onLandedChanged = { rollLanded = it },
         )
     }
 
     Scaffold(
         topBar = {
             YcTopBar("Cookbook", actions = {
-                DiceButton(
-                    recipes, query, protein, diceChapter,
-                    onRoll = { roll(diceChapter) },
-                    onPick = { picked ->
-                        onDiceChapter(picked)
-                        roll(picked)
-                    },
-                )
+                // On tablets, shaking is awkward so keep one clean dice button; on phones, shake to roll.
+                if (wide && diceChoices.isNotEmpty()) {
+                    IconButton(onClick = { openDicePicker() }) {
+                        Icon(Icons.Filled.Casino, contentDescription = "Roll the dice")
+                    }
+                }
                 actions()
             })
         },
@@ -334,63 +385,6 @@ fun RecipeGrid(
                         RecipeCard(recipe, serverUrl, recipe.slug == selectedSlug, today) { onOpen(recipe.slug) }
                     }
                 }
-            }
-        }
-    }
-}
-
-/**
- * The dice rolls a random recipe from the chapter picked last (Mains until changed). The small
- * arrow beside it picks another chapter (Drinks, Sides, Anything...), which rolls right away
- * and is remembered. Both honour the search and protein filter.
- */
-@Composable
-private fun DiceButton(
-    recipes: List<RecipeEntity>,
-    query: String,
-    protein: String?,
-    current: String?,
-    onRoll: () -> Unit,
-    onPick: (String?) -> Unit,
-) {
-    var open by remember { mutableStateOf(false) }
-    // Only chapters with something to roll, given the search and protein filter.
-    val choices = remember(recipes, query, protein) {
-        val matching = Cookbook.filter(recipes, query, null, protein)
-        Cookbook.chapterOrder(matching).map { c -> c to matching.count { Cookbook.chapterOf(it) == c } } to matching.size
-    }
-    val enabled = choices.second > 0
-    IconButton(enabled = enabled, onClick = onRoll) {
-        Icon(Icons.Filled.Casino, contentDescription = "Surprise me with " + (current ?: "anything"))
-    }
-    Box {
-        IconButton(enabled = enabled, onClick = { open = true }, modifier = Modifier.width(24.dp)) {
-            Icon(Icons.Filled.ArrowDropDown, contentDescription = "Pick what the dice rolls")
-        }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            Text(
-                "Roll the dice for",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            )
-            (choices.first + (null to choices.second)).forEach { (chapter, count) ->
-                DropdownMenuItem(
-                    text = { Text(chapter ?: "Anything") },
-                    trailingIcon = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("$count", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(Modifier.width(8.dp))
-                            Icon(
-                                Icons.Filled.Check,
-                                contentDescription = if (chapter == current) "Last pick" else null,
-                                tint = if (chapter == current) MaterialTheme.colorScheme.primary else Color.Transparent,
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
-                    },
-                    onClick = { open = false; onPick(chapter) },
-                )
             }
         }
     }
