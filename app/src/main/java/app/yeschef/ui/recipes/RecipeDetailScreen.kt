@@ -945,17 +945,33 @@ private fun nutritionRows(nutrition: Map<String, kotlinx.serialization.json.Json
     if (nutrition == null) return emptyList()
     return NUTRIENTS.mapNotNull { (key, label) ->
         val raw = (nutrition[key] as? kotlinx.serialization.json.JsonPrimitive)?.content?.trim()
-        if (raw.isNullOrEmpty() || raw == "null" || raw == "0") return@mapNotNull null
+        if (raw.isNullOrEmpty() || raw.equals("null", ignoreCase = true)) return@mapNotNull null
         val unit = when (key) { "calories" -> " kcal"; "sodiumContent", "cholesterolContent" -> " mg"; else -> " g" }
         label to (if (raw.toDoubleOrNull() != null) raw + unit else raw)
     }
+}
+
+/** Compact macro summary for the collapsed Nutrition header, e.g. "520 kcal · 31g P · 38g C · 26g F". */
+private fun macroSummary(rows: List<Pair<String, String>>): String {
+    val byLabel = rows.toMap()
+    val compact = { label: String, tag: String ->
+        byLabel[label]?.replace(" ", "")?.let { "$it $tag" }
+    }
+    val parts = listOfNotNull(
+        byLabel["Calories"],
+        compact("Protein", "P"),
+        compact("Carbs", "C"),
+        compact("Fat", "F"),
+    )
+    return if (parts.size >= 2) parts.joinToString(" · ")
+    else listOfNotNull(byLabel["Calories"], "per serving").joinToString(" · ")
 }
 
 @Composable
 private fun NutritionCard(rows: List<Pair<String, String>>, modifier: Modifier = Modifier) {
     val colors = MaterialTheme.colorScheme
     var open by rememberSaveable { mutableStateOf(false) }
-    val headline = rows.firstOrNull { it.first == "Calories" }?.second
+    val headline = remember(rows) { macroSummary(rows) }
     Surface(shape = MaterialTheme.shapes.large, color = colors.surfaceContainerLow, modifier = modifier.fillMaxWidth()) {
         Column {
             Row(
@@ -965,7 +981,7 @@ private fun NutritionCard(rows: List<Pair<String, String>>, modifier: Modifier =
                 Text("Nutrition", style = MaterialTheme.typography.titleSmall, color = colors.primary)
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    listOfNotNull(headline, "per serving").joinToString(" · "),
+                    headline,
                     style = MaterialTheme.typography.labelMedium,
                     color = colors.onSurfaceVariant,
                     modifier = Modifier.weight(1f),

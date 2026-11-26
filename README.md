@@ -26,7 +26,8 @@ your own Mealie server.
   from, and you can filter the list to one recipe. Tick items or add new ones offline. Items you
   type in by hand start under Other; tap the **magic wand** at the top and Mealie's ingredient
   parser (its AI parser, if Mealie has AI set up) links them to foods Mealie already knows, so they
-  move into those foods' aisles. Items that aren't a known food stay under Other.
+  move into those foods' aisles. Items that aren't a known food stay under Other; long-press any
+  item to move it into a store section and optionally remember that aisle for future lists.
 - **Multiple lists.** Switch, create, rename and delete lists. **Clear cart** removes everything
   you've ticked, and **Uncheck all** starts the list over. The screen reopens the list you
   were last on, even after a restart.
@@ -36,7 +37,7 @@ your own Mealie server.
   list it's on. Ticking an item updates its own list, and the add bar lets you pick which list a
   new item goes on.
 - **Cookbook.** Recipes read like a cookbook, with chapters from Mealie categories and filter chips
-  from tags (see [the cookbook scheme](#the-cookbook-categories-and-tags)). Sort by name, newest, rating,
+  from protein and style tags (see [the cookbook scheme](#the-cookbook-categories-and-tags)). Sort by name, newest, rating,
   quickest or "not made in a while", or let the dice pick something.
 - **Cook mode ("Let's cook!").** Large text, screen stays awake, and each step shows the ingredients it needs
   ("You'll need"). When you finish, YesChef offers to mark the recipe as cooked. Starting it, for one
@@ -57,7 +58,7 @@ your own Mealie server.
   timer, labelled with the step and recipe. Run several at once from the tray or the notification.
   A finished timer rings with your alarm sound, even when the app is closed.
 - **Servings scaler.** Scales every amount, including ones Mealie hasn't parsed.
-- **Nutrition.** Mealie's per-serving values, in a section that expands when tapped.
+- **Nutrition.** Mealie's per-serving calories and macros summarized on the collapsed card and expanded in full when tapped.
 - **Recipe photos.** Take one with the camera or pick one from the gallery.
 - **Add recipes from a link or a photo.** Tap the **+** button in the cookbook's bottom corner and paste a recipe page's link,
   or share a page to YesChef from your browser. Mealie imports it and the recipe opens. If Mealie

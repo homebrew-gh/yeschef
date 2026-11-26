@@ -72,6 +72,12 @@ object Cookbook {
         return proteins.filter { (_, aliases) -> aliases.any { it in words } }.map { it.first }.toSet()
     }
 
+    /** Cooking style tags present on this recipe, in standard order. */
+    fun stylesOf(r: RecipeEntity): Set<String> {
+        val words = names(r.tags).map { it.lowercase() }.toSet()
+        return styleTags.filter { it.lowercase() in words }.toSet()
+    }
+
     /** Chapters that have recipes, in book order, then any custom categories A to Z, then unfiled. */
     fun chapterOrder(recipes: List<RecipeEntity>): List<String> {
         val present = recipes.map(::chapterOf).toSet()
@@ -80,10 +86,17 @@ object Cookbook {
         return known + custom + listOfNotNull(UNFILED.takeIf { it in present })
     }
 
-    fun filter(recipes: List<RecipeEntity>, query: String, chapter: String?, protein: String?): List<RecipeEntity> =
+    fun filter(
+        recipes: List<RecipeEntity>,
+        query: String,
+        chapter: String?,
+        protein: String?,
+        style: String? = null,
+    ): List<RecipeEntity> =
         recipes.filter { r ->
             (chapter == null || chapterOf(r) == chapter) &&
                 (protein == null || protein in proteinsOf(r)) &&
+                (style == null || style in stylesOf(r)) &&
                 (query.isBlank() || r.name.contains(query, true) || r.description.orEmpty().contains(query, true) ||
                     names(r.tags).any { it.contains(query, true) })
         }
@@ -188,8 +201,9 @@ object Cookbook {
         protein: String?,
         today: LocalDate,
         random: kotlin.random.Random = kotlin.random.Random.Default,
+        style: String? = null,
     ): RecipeEntity? {
-        val pool = filter(recipes, query, chapter, protein)
+        val pool = filter(recipes, query, chapter, protein, style)
         val fresh = pool.filter { r ->
             val date = parseDate(r.lastMade)
             date == null || ChronoUnit.DAYS.between(date, today) >= 14

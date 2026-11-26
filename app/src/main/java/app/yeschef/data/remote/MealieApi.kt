@@ -63,8 +63,17 @@ interface MealieApi {
     @GET("foods")
     suspend fun foods(@Query("perPage") perPage: Int = -1): Page<JsonObject>
 
+    @GET("foods/{id}")
+    suspend fun foodRaw(@Path("id") id: String): JsonObject
+
     @POST("foods")
     suspend fun createFood(@Body body: JsonObject): JsonObject
+
+    @PUT("foods/{id}")
+    suspend fun updateFood(@Path("id") id: String, @Body body: JsonObject): JsonObject
+
+    @GET("groups/labels")
+    suspend fun labels(@Query("perPage") perPage: Int = -1): Page<LabelDto>
 
     @GET("units")
     suspend fun units(@Query("perPage") perPage: Int = -1): Page<JsonObject>

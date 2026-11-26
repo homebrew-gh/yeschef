@@ -38,6 +38,8 @@ class CookbookTest {
         assertEquals(listOf("Garlic green beans"), Cookbook.filter(box, "", null, "Vegetarian").map { it.name })
         assertEquals(listOf("Lasagna"), Cookbook.filter(box, "", "Mains", "Beef").map { it.name })
         assertEquals(listOf("Garlic green beans"), Cookbook.filter(box, "quick", null, null).map { it.name })
+        assertEquals(listOf("Garlic green beans"), Cookbook.filter(box, "", null, null, style = "Quick").map { it.name })
+        assertEquals(setOf("Quick"), Cookbook.stylesOf(box[1]))
     }
 
     @Test fun sorts() {

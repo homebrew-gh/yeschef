@@ -6,6 +6,7 @@ import app.yeschef.data.local.RecipeEntity
 import app.yeschef.data.local.ShoppingItemEntity
 import app.yeschef.data.local.ShoppingListEntity
 import app.yeschef.data.local.YesChefDb
+import app.yeschef.data.remote.LabelDto
 import app.yeschef.data.remote.LastMadeBody
 import kotlinx.serialization.json.JsonPrimitive
 import app.yeschef.data.remote.MealieApi
@@ -647,6 +648,39 @@ class Repository(
         }
         sync()
         return AisleResult(sorted, noAisle, items.size - sorted - noAisle)
+    }
+
+    /** Mealie's store sections (labels), sorted A to Z. Needs the server. */
+    suspend fun storeSections(): List<LabelDto> {
+        val api = apiProvider() ?: throw IOException("Not connected to a server")
+        return api.labels().items.sortedBy { it.name.lowercase() }
+    }
+
+    /**
+     * Moves one shopping list item into [label] (store section), and when [rememberForFood]
+     * is set and the item is linked to a Mealie food, updates that food's label too so
+     * future lists sort it automatically. Needs the server.
+     */
+    suspend fun assignItemAisle(itemId: String, label: LabelDto, rememberForFood: Boolean = true) {
+        val api = apiProvider() ?: throw IOException("Not connected to a server")
+        sync()
+        val entity = db.shopping().item(itemId) ?: error("Item not found")
+        val raw = entity.rawJson?.let { MealieJson.parseToJsonElement(it).jsonObject }
+            ?: error("Sync the item first before assigning an aisle")
+        val updated = raw.toMutableMap()
+        updated.remove("label")
+        updated["labelId"] = JsonPrimitive(label.id)
+        api.updateShoppingItem(itemId, JsonObject(updated))
+        if (rememberForFood) {
+            val foodId = raw.string("foodId") ?: (raw["food"] as? JsonObject)?.string("id")
+            if (foodId != null) {
+                runCatching {
+                    val food = api.foodRaw(foodId)
+                    api.updateFood(foodId, JsonObject(food + ("labelId" to JsonPrimitive(label.id))))
+                }
+            }
+        }
+        sync()
     }
 
     private suspend fun cacheDetail(api: MealieApi, slug: String) {
