@@ -169,6 +169,13 @@ object Cookbook {
         return if (secs > 0) secs / 60 else null
     }
 
+    /** Compact time label for recipe cards ("1 hr 30 min", "40 min"), falling back to raw text. */
+    fun compactTime(totalTime: String?): String? {
+        val raw = totalTime?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val mins = minutes(raw) ?: return raw
+        return app.yeschef.data.cook.formatShort(mins * 60)
+    }
+
     /** "Cooked today", "Cooked 3 weeks ago"... or null if never cooked. */
     fun lastCookedText(lastMade: String?, today: LocalDate): String? {
         val date = parseDate(lastMade) ?: return null

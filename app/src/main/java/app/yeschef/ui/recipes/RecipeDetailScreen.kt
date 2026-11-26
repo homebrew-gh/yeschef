@@ -6,7 +6,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material.icons.filled.AddShoppingCart
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.PictureAsPdf
@@ -70,10 +70,12 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -82,6 +84,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -92,13 +95,15 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Scale
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.outlined.LightMode
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -109,11 +114,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yeschef.AppContainer
@@ -530,6 +537,8 @@ fun RecipeDetailContent(
     val colors = MaterialTheme.colorScheme
     val wide = isWide()
     var checkedIngredients by remember(detail?.id) { mutableStateOf(setOf<Int>()) }
+    var completedSteps by remember(detail?.id) { mutableStateOf(setOf<Int>()) }
+    var ingredientsOpen by rememberSaveable(detail?.id, cookMode) { mutableStateOf(!cookMode) }
     // Servings scaler: by servings when the recipe says how many it makes, else by a multiplier.
     val servingsBase = remember(detail?.id) { detail?.let { baseServings(it.recipeServings, it.recipeYield) } }
     var servings by remember(detail?.id) { mutableStateOf(initialServings ?: servingsBase ?: 1.0) }
@@ -548,6 +557,21 @@ fun RecipeDetailContent(
                     if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                 },
                 actions = {
+                    if (cookMode && detail != null && onAddNote != null) {
+                        IconButton(onClick = { onAddNote(stepInView(listState)) }) {
+                            BadgedBox(
+                                badge = {
+                                    if (noteCount > 0) {
+                                        Badge(containerColor = colors.tertiary, contentColor = colors.onTertiary) {
+                                            Text("$noteCount")
+                                        }
+                                    }
+                                },
+                            ) {
+                                Icon(Icons.Filled.Mic, contentDescription = "Add a cooking note")
+                            }
+                        }
+                    }
                     if (onEdit != null && !cookMode) {
                         IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, "Edit recipe") }
                     }
@@ -557,24 +581,23 @@ fun RecipeDetailContent(
                     IconButton(onClick = onCustomTimer) { Icon(Icons.Filled.Timer, "New timer") }
                     // In cook mode the back arrow leaves it, and "Done cooking" ends it.
                     if (!cookMode) {
-                        FilterChip(
-                            selected = false,
+                        Button(
                             onClick = onStartCooking,
-                            label = { Text(LETS_COOK) },
-                            leadingIcon = { Icon(Icons.Outlined.LightMode, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                            modifier = Modifier.padding(end = 8.dp),
-                        )
+                            shape = CircleShape,
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                            modifier = Modifier.height(36.dp).padding(end = 2.dp),
+                        ) {
+                            Icon(Icons.Outlined.LightMode, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(LETS_COOK, style = MaterialTheme.typography.labelLarge)
+                        }
+                        if (onShare != null) ShareOverflowButton(onShare = { onShare(it, scale) })
                     }
                 },
             )
         },
         containerColor = colors.background,
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        floatingActionButton = {
-            if (cookMode && detail != null && onAddNote != null) {
-                CookNoteButton(noteCount) { onAddNote(stepInView(listState)) }
-            }
-        },
     ) { padding ->
         if (detail == null) {
             Text(notLoadedMessage, Modifier.padding(padding).padding(24.dp), style = MaterialTheme.typography.bodyLarge)
@@ -585,98 +608,108 @@ fun RecipeDetailContent(
         val equipment = remember(detail.tools) { detail.tools.mapNotNull { it.name?.trim()?.takeIf(String::isNotEmpty) } }
         val recipeNotes = remember(detail.notes) { detail.notes.filter { !it.text.isNullOrBlank() || !it.title.isNullOrBlank() } }
         val logEntries = remember(detail.timeline) { detail.timeline.filter { !it.eventMessage.isNullOrBlank() } }
-        // On the tablet the recipe keeps a readable width, centred.
-        LazyColumn(
-            Modifier.padding(padding).fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = 860.dp),
-            state = listState,
-            // Room under the last step for the note button.
-            contentPadding = PaddingValues(bottom = if (cookMode && onAddNote != null) 96.dp else 32.dp),
-        ) {
-            if (!cookMode) {
-                item {
-                    Box(
-                        Modifier.padding(horizontal = 16.dp).fillMaxWidth()
-                            .then(if (wide) Modifier.height(300.dp) else Modifier.aspectRatio(16f / 10f))
-                            .clip(MaterialTheme.shapes.extraLarge),
-                    ) {
-                        RecipeImage(serverUrl, detail.id, Modifier.fillMaxSize())
-                        if (photoUploading) {
-                            Box(Modifier.fillMaxSize().background(colors.scrim.copy(alpha = 0.35f)), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator(color = Color.White)
-                            }
-                        }
-                        if (onTakePhoto != null && onPickPhoto != null && !photoUploading) {
-                            PhotoButton(
-                                hasPhoto = !detail.image.isNullOrBlank(),
-                                onTakePhoto = onTakePhoto,
-                                onPickPhoto = onPickPhoto,
-                                modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp),
-                            )
+        val facts = remember(detail) {
+            listOfNotNull(
+                detail.prepTime?.takeIf { it.isNotBlank() }?.let { "Prep" to (Cookbook.compactTime(it) ?: it) },
+                detail.performTime?.takeIf { it.isNotBlank() }?.let { "Cook" to (Cookbook.compactTime(it) ?: it) },
+                detail.totalTime?.takeIf { it.isNotBlank() }?.let { "Total" to (Cookbook.compactTime(it) ?: it) },
+                detail.recipeYield?.takeIf { it.isNotBlank() }?.let { "Makes" to it },
+            )
+        }
+        val nutrition = remember(detail.nutrition) { nutritionRows(detail.nutrition) }
+        val ingredientCount = remember(detail.recipeIngredient) {
+            detail.recipeIngredient.count { !app.yeschef.data.isHeadingOnly(it) }
+        }
+        val toggleIngredient: (Int) -> Unit = { index ->
+            checkedIngredients = if (index in checkedIngredients) checkedIngredients - index else checkedIngredients + index
+        }
+        val toggleStep: (Int) -> Unit = { index ->
+            completedSteps = if (index in completedSteps) completedSteps - index else completedSteps + index
+        }
+
+        fun LazyListScope.recipeHeaderItems() {
+            if (cookMode) return
+            item {
+                Box(
+                    Modifier.padding(horizontal = 16.dp).fillMaxWidth()
+                        .aspectRatio(16f / 10f)
+                        .clip(MaterialTheme.shapes.extraLarge),
+                ) {
+                    RecipeImage(serverUrl, detail.id, Modifier.fillMaxSize())
+                    if (photoUploading) {
+                        Box(Modifier.fillMaxSize().background(colors.scrim.copy(alpha = 0.35f)), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = Color.White)
                         }
                     }
-                }
-                item {
-                    Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
-                        Text(detail.name, style = MaterialTheme.typography.headlineMedium)
-                        if (tagLine.isNotEmpty()) {
-                            Spacer(Modifier.size(6.dp))
-                            Text(
-                                tagLine.joinToString("  ·  "),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = colors.tertiary,
-                                modifier = if (onEditTags != null) Modifier.clip(MaterialTheme.shapes.small).clickable(onClick = onEditTags) else Modifier,
-                            )
-                        } else if (onEditTags != null && !cookMode) {
-                            // Tapping the tags edits them; with none yet, this is the way in.
-                            Spacer(Modifier.size(6.dp))
-                            Row(
-                                Modifier.clip(MaterialTheme.shapes.small).clickable(onClick = onEditTags).padding(vertical = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.Label, contentDescription = null, tint = colors.tertiary, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Add chapter and tags", style = MaterialTheme.typography.labelLarge, color = colors.tertiary)
-                            }
-                        }
-                        detail.description?.takeIf { it.isNotBlank() }?.let {
-                            Spacer(Modifier.size(8.dp))
-                            Text(it, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
-                        }
+                    if (onTakePhoto != null && onPickPhoto != null && !photoUploading) {
+                        PhotoButton(
+                            hasPhoto = !detail.image.isNullOrBlank(),
+                            onTakePhoto = onTakePhoto,
+                            onPickPhoto = onPickPhoto,
+                            modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp),
+                        )
                     }
                 }
             }
-            val facts = listOfNotNull(
-                detail.recipeYield?.takeIf { it.isNotBlank() }?.let { "Makes" to it },
-                detail.prepTime?.takeIf { it.isNotBlank() }?.let { "Prep" to it },
-                detail.performTime?.takeIf { it.isNotBlank() }?.let { "Cook" to it },
-                detail.totalTime?.takeIf { it.isNotBlank() }?.let { "Total" to it },
-                lastCooked?.let { "Last cooked" to it.removePrefix("Cooked ") },
-            )
+            item {
+                Column(Modifier.padding(horizontal = 20.dp, vertical = 14.dp)) {
+                    Text(detail.name, style = MaterialTheme.typography.headlineMedium)
+                    if (tagLine.isNotEmpty() || lastCooked != null || onEditTags != null) {
+                        Spacer(Modifier.size(6.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            if (tagLine.isNotEmpty()) {
+                                Text(
+                                    tagLine.joinToString("  ·  "),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = colors.tertiary,
+                                    modifier = if (onEditTags != null) Modifier.clip(MaterialTheme.shapes.small).clickable(onClick = onEditTags) else Modifier,
+                                )
+                            } else if (onEditTags != null) {
+                                // Tapping the tags edits them; with none yet, this is the way in.
+                                Row(
+                                    Modifier.clip(MaterialTheme.shapes.small).clickable(onClick = onEditTags),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(Icons.AutoMirrored.Filled.Label, contentDescription = null, tint = colors.tertiary, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Add chapter and tags", style = MaterialTheme.typography.labelLarge, color = colors.tertiary)
+                                }
+                            }
+                            if (lastCooked != null) {
+                                if (tagLine.isNotEmpty() || onEditTags != null) {
+                                    Text("·", style = MaterialTheme.typography.labelLarge, color = colors.outline)
+                                }
+                                Text(lastCooked, style = MaterialTheme.typography.labelLarge, color = colors.onSurfaceVariant)
+                            }
+                        }
+                    }
+                    detail.description?.takeIf { it.isNotBlank() }?.let {
+                        Spacer(Modifier.size(8.dp))
+                        Text(it, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
+                    }
+                }
+            }
             if (facts.isNotEmpty()) {
                 item {
-                    Row(
-                        Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        facts.forEach { (label, value) -> FactPill(label, value) }
-                    }
+                    FactStrip(facts, Modifier.padding(horizontal = 16.dp, vertical = 2.dp))
                 }
             }
-
-            if (equipment.isNotEmpty() && !cookMode) {
+            if (equipment.isNotEmpty()) {
                 item {
                     Text(
                         "Equipment: ${equipment.joinToString(" · ")}",
                         style = MaterialTheme.typography.bodySmall,
                         color = colors.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
                     )
                 }
             }
-
-            if ((onCookWithSides != null || onAddToList != null || onShare != null || onReviewNotes != null) && !cookMode) {
+            if (onCookWithSides != null || onAddToList != null || onReviewNotes != null) {
                 item {
-                    FlowRow(Modifier.padding(start = 8.dp, top = 4.dp, end = 8.dp)) {
+                    FlowRow(Modifier.padding(start = 8.dp, top = 2.dp, end = 8.dp)) {
                         if (onReviewNotes != null) {
                             TextButton(onClick = onReviewNotes) {
                                 Icon(Icons.Filled.Mic, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -695,83 +728,91 @@ fun RecipeDetailContent(
                             TextButton(onClick = onCookWithSides) {
                                 Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text("Add a side and cook together")
-                            }
-                        }
-                        if (onShare != null) ShareMenu(onShare = { onShare(it, scale) })
-                    }
-                }
-            }
-            item {
-                Row(Modifier.fillMaxWidth().padding(end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    SectionLabel("Ingredients", Modifier.weight(1f))
-                    ServingsStepper(servingsBase, servings, factor, onServings = { servings = it }, onFactor = { factor = it })
-                }
-            }
-            item {
-                Surface(
-                    shape = MaterialTheme.shapes.large,
-                    color = colors.surfaceContainerLow,
-                    modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
-                ) {
-                    Column(Modifier.padding(vertical = 6.dp)) {
-                        detail.recipeIngredient.forEachIndexed { index, ingredient ->
-                            ingredient.title?.takeIf { it.isNotBlank() }?.let {
-                                Text(it, Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp), style = MaterialTheme.typography.titleSmall, color = colors.primary)
-                            }
-                            if (app.yeschef.data.isHeadingOnly(ingredient)) return@forEachIndexed
-                            val done = index in checkedIngredients
-                            IngredientRow(scaleIngredient(ingredientText(ingredient), scale), done, bodyStyle) {
-                                checkedIngredients = if (done) checkedIngredients - index else checkedIngredients + index
+                                Text("Cook with sides")
                             }
                         }
                     }
                 }
             }
+        }
 
-            nutritionRows(detail.nutrition).takeIf { it.isNotEmpty() }?.let { rows ->
-                item { NutritionCard(rows, Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp)) }
-            }
-
-            item { SectionLabel("Method") }
-            itemsIndexed(detail.recipeInstructions, key = { index, _ -> STEP_KEY + index }) { index, step ->
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
-                    step.title?.takeIf { it.isNotBlank() }?.let {
-                        Text(it, style = MaterialTheme.typography.titleMedium, color = colors.primary, modifier = Modifier.padding(start = 4.dp, bottom = 6.dp, top = 8.dp))
-                    }
-                    Row {
-                        Box(
-                            Modifier.size(if (cookMode) 40.dp else 32.dp).background(colors.primaryContainer, CircleShape),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text("${index + 1}", style = MaterialTheme.typography.titleMedium, color = colors.onPrimaryContainer, textAlign = TextAlign.Center)
-                        }
-                        Spacer(Modifier.width(14.dp))
-                        Column(Modifier.weight(1f).padding(top = 4.dp)) {
-                            Text(step.text, style = bodyStyle)
-                            stepIngredients.getOrNull(index)?.takeIf { it.isNotEmpty() }?.let { used ->
-                                StepIngredients(
-                                    lines = stepIngredientRows(detail, used, index, firstUse) { scaleIngredient(it, scale) },
-                                    checked = checkedIngredients,
-                                    onToggle = { i -> checkedIngredients = if (i in checkedIngredients) checkedIngredients - i else checkedIngredients + i },
+        fun LazyListScope.ingredientsItems(collapsible: Boolean) {
+            if (collapsible) {
+                item {
+                    Surface(
+                        shape = MaterialTheme.shapes.large,
+                        color = colors.surfaceContainerLow,
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp).fillMaxWidth(),
+                    ) {
+                        Column {
+                            Row(
+                                Modifier.fillMaxWidth().clickable { ingredientsOpen = !ingredientsOpen }
+                                    .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Ingredients", style = MaterialTheme.typography.titleSmall, color = colors.primary)
+                                    Text(
+                                        if (ingredientCount == 1) "1 item" else "$ingredientCount items",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = colors.onSurfaceVariant,
+                                    )
+                                }
+                                ServingsStepper(servingsBase, servings, factor, onServings = { servings = it }, onFactor = { factor = it })
+                                Spacer(Modifier.width(4.dp))
+                                Icon(
+                                    if (ingredientsOpen) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                                    contentDescription = if (ingredientsOpen) "Hide ingredients" else "Show ingredients",
+                                    tint = colors.outline,
+                                    modifier = Modifier.padding(end = 4.dp),
                                 )
                             }
-                            val found = remember(step.text, step.durationSeconds) { stepTimers(step.text, step.durationSeconds) }
-                            if (found.isNotEmpty()) {
-                                Row(
-                                    Modifier.horizontalScroll(rememberScrollState()).padding(top = 8.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    found.forEach { d ->
-                                        TimerChip(formatShort(d.seconds)) {
-                                            onStartTimer(timerStepLabel(index + 1, step.summary?.takeIf { it.isNotBlank() } ?: step.title, step.text, d.text), d.seconds)
-                                        }
-                                    }
-                                }
+                            if (ingredientsOpen) {
+                                IngredientListContent(detail, scale, checkedIngredients, bodyStyle, toggleIngredient)
                             }
                         }
                     }
                 }
+            } else {
+                item {
+                    Row(Modifier.fillMaxWidth().padding(end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        SectionLabel("Ingredients", Modifier.weight(1f))
+                        ServingsStepper(servingsBase, servings, factor, onServings = { servings = it }, onFactor = { factor = it })
+                    }
+                }
+                item {
+                    Surface(
+                        shape = MaterialTheme.shapes.large,
+                        color = colors.surfaceContainerLow,
+                        modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
+                    ) {
+                        IngredientListContent(detail, scale, checkedIngredients, bodyStyle, toggleIngredient)
+                    }
+                }
+            }
+            if (!cookMode && nutrition.isNotEmpty()) {
+                item { NutritionCard(nutrition, Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp)) }
+            }
+        }
+
+        fun LazyListScope.methodAndFooterItems() {
+            item { SectionLabel("Method") }
+            itemsIndexed(detail.recipeInstructions, key = { index, _ -> STEP_KEY + index }) { index, step ->
+                StepItem(
+                    index = index,
+                    step = step,
+                    detail = detail,
+                    cookMode = cookMode,
+                    done = cookMode && index in completedSteps,
+                    onToggleDone = { toggleStep(index) },
+                    bodyStyle = bodyStyle,
+                    stepIngredients = stepIngredients,
+                    firstUse = firstUse,
+                    scale = scale,
+                    checkedIngredients = checkedIngredients,
+                    onToggleIngredient = toggleIngredient,
+                    onStartTimer = onStartTimer,
+                )
             }
             if (cookMode && onFinishCooking != null) {
                 item(key = "done-cooking") {
@@ -810,11 +851,42 @@ fun RecipeDetailContent(
                         }
                     }
                 }
-            }
-            detail.orgURL?.takeIf { it.isNotBlank() }?.let { url ->
-                item {
-                    Text("Source: $url", Modifier.padding(20.dp), style = MaterialTheme.typography.labelMedium, color = colors.outline)
+                detail.orgURL?.takeIf { it.isNotBlank() }?.let { url ->
+                    item {
+                        Text("Source: $url", Modifier.padding(20.dp), style = MaterialTheme.typography.labelMedium, color = colors.outline)
+                    }
                 }
+            }
+        }
+
+        if (wide) {
+            // Open cookbook spread on tablets: ingredients stay visible on the left while cooking on the right.
+            Row(Modifier.padding(padding).fillMaxSize()) {
+                LazyColumn(
+                    Modifier.weight(0.4f).fillMaxHeight(),
+                    contentPadding = PaddingValues(bottom = 32.dp),
+                ) {
+                    recipeHeaderItems()
+                    ingredientsItems(collapsible = false)
+                }
+                VerticalDivider(color = colors.outlineVariant.copy(alpha = 0.6f))
+                LazyColumn(
+                    Modifier.weight(0.6f).fillMaxHeight(),
+                    state = listState,
+                    contentPadding = PaddingValues(bottom = 32.dp),
+                ) {
+                    methodAndFooterItems()
+                }
+            }
+        } else {
+            LazyColumn(
+                Modifier.padding(padding).fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = 860.dp),
+                state = listState,
+                contentPadding = PaddingValues(bottom = 32.dp),
+            ) {
+                recipeHeaderItems()
+                ingredientsItems(collapsible = cookMode)
+                methodAndFooterItems()
             }
         }
     }
@@ -833,13 +905,11 @@ private fun stepInView(state: LazyListState): Int? {
 }
 
 @Composable
-private fun ShareMenu(onShare: (ShareKind) -> Unit) {
+private fun ShareOverflowButton(onShare: (ShareKind) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
-        TextButton(onClick = { open = true }) {
-            Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("Share or print")
+        IconButton(onClick = { open = true }) {
+            Icon(Icons.Filled.MoreVert, contentDescription = "Share or print")
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             DropdownMenuItem(
@@ -857,6 +927,89 @@ private fun ShareMenu(onShare: (ShareKind) -> Unit) {
                 leadingIcon = { Icon(Icons.Filled.Print, contentDescription = null) },
                 onClick = { open = false; onShare(ShareKind.Print) },
             )
+        }
+    }
+}
+
+@Composable
+private fun IngredientListContent(
+    detail: RecipeDetailDto,
+    scale: Double,
+    checkedIngredients: Set<Int>,
+    bodyStyle: androidx.compose.ui.text.TextStyle,
+    onToggle: (Int) -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    Column(Modifier.padding(vertical = 6.dp)) {
+        detail.recipeIngredient.forEachIndexed { index, ingredient ->
+            ingredient.title?.takeIf { it.isNotBlank() }?.let {
+                Text(it, Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp), style = MaterialTheme.typography.titleSmall, color = colors.primary)
+            }
+            if (app.yeschef.data.isHeadingOnly(ingredient)) return@forEachIndexed
+            val done = index in checkedIngredients
+            IngredientRow(scaleIngredient(ingredientText(ingredient), scale), done, bodyStyle) { onToggle(index) }
+        }
+    }
+}
+
+@Composable
+private fun StepItem(
+    index: Int,
+    step: app.yeschef.data.remote.StepDto,
+    detail: RecipeDetailDto,
+    cookMode: Boolean,
+    done: Boolean,
+    onToggleDone: () -> Unit,
+    bodyStyle: androidx.compose.ui.text.TextStyle,
+    stepIngredients: List<List<Int>>,
+    firstUse: Map<Int, Int>,
+    scale: Double,
+    checkedIngredients: Set<Int>,
+    onToggleIngredient: (Int) -> Unit,
+    onStartTimer: (label: String, seconds: Long) -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+        step.title?.takeIf { it.isNotBlank() }?.let {
+            Text(it, style = MaterialTheme.typography.titleMedium, color = colors.primary, modifier = Modifier.padding(start = 4.dp, bottom = 6.dp, top = 8.dp))
+        }
+        Row(Modifier.alpha(if (done) 0.5f else 1f)) {
+            val circleMod = Modifier
+                .size(if (cookMode) 40.dp else 32.dp)
+                .clip(CircleShape)
+                .background(if (done) colors.tertiary else colors.primaryContainer)
+                .then(if (cookMode) Modifier.clickable(onClick = onToggleDone) else Modifier)
+            Box(circleMod, contentAlignment = Alignment.Center) {
+                if (done) {
+                    Icon(Icons.Filled.Check, contentDescription = "Step ${index + 1} done", tint = colors.onTertiary, modifier = Modifier.size(20.dp))
+                } else {
+                    Text("${index + 1}", style = MaterialTheme.typography.titleMedium, color = colors.onPrimaryContainer, textAlign = TextAlign.Center)
+                }
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f).padding(top = 4.dp)) {
+                Text(step.text, style = bodyStyle)
+                stepIngredients.getOrNull(index)?.takeIf { it.isNotEmpty() }?.let { used ->
+                    StepIngredients(
+                        lines = stepIngredientRows(detail, used, index, firstUse) { scaleIngredient(it, scale) },
+                        checked = checkedIngredients,
+                        onToggle = onToggleIngredient,
+                    )
+                }
+                val found = remember(step.text, step.durationSeconds) { stepTimers(step.text, step.durationSeconds) }
+                if (found.isNotEmpty()) {
+                    Row(
+                        Modifier.horizontalScroll(rememberScrollState()).padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        found.forEach { d ->
+                            TimerChip(formatShort(d.seconds)) {
+                                onStartTimer(timerStepLabel(index + 1, step.summary?.takeIf { it.isNotBlank() } ?: step.title, step.text, d.text), d.seconds)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -1194,12 +1347,45 @@ internal fun stepIngredientsFor(detail: RecipeDetailDto): List<List<Int>> = ingr
 )
 
 @Composable
-private fun FactPill(label: String, value: String) {
+private fun FactStrip(facts: List<Pair<String, String>>, modifier: Modifier = Modifier) {
     val colors = MaterialTheme.colorScheme
-    Surface(shape = MaterialTheme.shapes.medium, color = colors.tertiaryContainer) {
-        Column(Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
-            Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, color = colors.tertiary)
-            Text(value, style = MaterialTheme.typography.titleSmall, color = colors.onTertiaryContainer)
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = colors.tertiaryContainer,
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            facts.forEachIndexed { idx, (label, value) ->
+                if (idx > 0) {
+                    Box(
+                        Modifier.width(1.dp).fillMaxHeight().padding(vertical = 4.dp)
+                            .background(colors.tertiary.copy(alpha = 0.25f)),
+                    )
+                }
+                Column(
+                    Modifier.weight(1f).padding(horizontal = 6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        label.uppercase(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.tertiary,
+                        maxLines = 1,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        value,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = colors.onTertiaryContainer,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
         }
     }
 }

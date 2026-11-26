@@ -41,10 +41,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items as rowItems
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import app.yeschef.ui.isWide
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
@@ -168,6 +171,10 @@ fun RecipeGrid(
         Cookbook.sections(shown, if (chapter != null && sort == Cookbook.Sort.Chapters) Cookbook.Sort.AtoZ else sort)
     }
     val colors = MaterialTheme.colorScheme
+    val wide = isWide()
+    // Horizontal shelves in "All" chapter view eliminate half-empty rows; tapping a chapter or
+    // picking another sort switches to the full grid.
+    val shelfView = chapter == null && sort == Cookbook.Sort.Chapters && query.isBlank() && protein == null && style == null
     // The recipe the dice landed on, shown in the roll animation; the count replays it on "Roll again".
     var rolledSlug by rememberSaveable { mutableStateOf<String?>(null) }
     var rollCount by rememberSaveable { mutableStateOf(0) }
@@ -226,20 +233,27 @@ fun RecipeGrid(
             modifier = Modifier.padding(padding).fillMaxSize(),
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                    placeholder = { Text("Search ${recipes.size} recipes") },
-                    singleLine = true,
-                    shape = CircleShape,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        unfocusedContainerColor = colors.surfaceContainer,
-                        focusedContainerColor = colors.surfaceContainerLowest,
-                        unfocusedBorderColor = Color.Transparent,
-                    ),
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                )
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                        placeholder = { Text("Search ${recipes.size} recipes") },
+                        singleLine = true,
+                        shape = CircleShape,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedContainerColor = colors.surfaceContainer,
+                            focusedContainerColor = colors.surfaceContainerLowest,
+                            unfocusedBorderColor = Color.Transparent,
+                        ),
+                        modifier = Modifier.weight(1f),
+                    )
+                    SortButton(sort, chapterView = chapter == null) { sort = it }
+                }
             }
             if (chapters.size > 1) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
@@ -254,10 +268,10 @@ fun RecipeGrid(
                     }
                 }
             }
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            if (proteins.isNotEmpty() || styles.isNotEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
                     Row(
-                        Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         proteins.forEach { p ->
@@ -285,7 +299,6 @@ fun RecipeGrid(
                             )
                         }
                     }
-                    SortButton(sort, chapterView = chapter == null) { sort = it }
                 }
             }
             if (shown.isEmpty()) {
@@ -305,8 +318,21 @@ fun RecipeGrid(
                         ChapterHeader(section.title, section.recipes.size) { chapter = section.title }
                     }
                 }
-                items(section.recipes, key = { it.id }) { recipe ->
-                    RecipeCard(recipe, serverUrl, recipe.slug == selectedSlug, today) { onOpen(recipe.slug) }
+                if (shelfView) {
+                    item(span = { GridItemSpan(maxLineSpan) }, key = "shelf-" + section.title) {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            rowItems(section.recipes, key = { it.id }) { recipe ->
+                                RecipeCard(
+                                    recipe, serverUrl, recipe.slug == selectedSlug, today,
+                                    modifier = Modifier.width(if (wide) 196.dp else 172.dp),
+                                ) { onOpen(recipe.slug) }
+                            }
+                        }
+                    }
+                } else {
+                    items(section.recipes, key = { it.id }) { recipe ->
+                        RecipeCard(recipe, serverUrl, recipe.slug == selectedSlug, today) { onOpen(recipe.slug) }
+                    }
                 }
             }
         }
@@ -461,7 +487,7 @@ private fun RecipeCard(
         border = if (selected) BorderStroke(2.dp, colors.primary) else null,
         modifier = modifier,
     ) {
-        RecipeImage(serverUrl, recipe.id, Modifier.fillMaxWidth().aspectRatio(4f / 3f))
+        RecipeImage(serverUrl, recipe.id, Modifier.fillMaxWidth().aspectRatio(16f / 10f))
         Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
             Text(
                 recipe.name,
@@ -472,11 +498,12 @@ private fun RecipeCard(
             )
             Spacer(Modifier.size(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (!recipe.totalTime.isNullOrBlank()) {
+                val timeLabel = Cookbook.compactTime(recipe.totalTime)
+                if (timeLabel != null) {
                     Icon(Icons.Filled.Schedule, contentDescription = null, tint = colors.tertiary, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
                     Text(
-                        recipe.totalTime, style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant,
+                        timeLabel, style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant,
                         maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
                     )
                 } else {
