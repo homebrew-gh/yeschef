@@ -5,6 +5,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material.icons.filled.AddShoppingCart
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Print
@@ -97,6 +98,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Scale
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.outlined.LightMode
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -469,10 +471,37 @@ fun RecipeDetailScreen(
     val kitchenTools = rememberKitchenToolsState()
     KitchenToolsSheet(kitchenTools)
 
+    var confirmDelete by rememberSaveable { mutableStateOf(false) }
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Delete recipe?") },
+            text = { Text("Permanently delete \"$recipeName\" from Mealie? This can't be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmDelete = false
+                        val id = noteId
+                        scope.launch {
+                            if (activeCook?.slug == slug) container.setActiveCook(null)
+                            if (id != null) container.settings.updateCookNotes(id) { emptyList() }
+                            repo.deleteRecipe(slug, id)
+                            SyncScheduler.requestSync(context)
+                            onBack?.invoke()
+                        }
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
+        )
+    }
+
     RecipeDetailContent(
         title = recipeName,
         onShare = if (detail != null) share else null,
         onEdit = if (detail != null) ({ draft = RecipeDraft.of(detail) }) else null,
+        onDelete = if (entity != null || detail != null) ({ confirmDelete = true }) else null,
         onAddToList = if (detail != null) ({ addingToList = true }) else null,
         onCookWithSides = if (detail != null) ({ pickingSides = true }) else null,
         detail = detail,
@@ -575,6 +604,7 @@ fun RecipeDetailContent(
     onEditTags: (() -> Unit)? = null,
     onCookWithSides: (() -> Unit)? = null,
     onEdit: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
     onAddToList: (() -> Unit)? = null,
     onShare: ((ShareKind, scale: Double) -> Unit)? = null,
     initialServings: Double? = null,
@@ -634,15 +664,14 @@ fun RecipeDetailContent(
                     if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                 },
                 actions = {
-                    if (onEdit != null && !cookMode) {
-                        IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, "Edit recipe") }
-                    }
-                    if (onKitchenTools != null) {
-                        IconButton(onClick = onKitchenTools) { Icon(Icons.Filled.Scale, "Kitchen tools: converter and reference") }
-                    }
-                    IconButton(onClick = onCustomTimer) { Icon(Icons.Filled.Timer, "New timer") }
-                    // In cook mode the back arrow leaves it, and "Done cooking" ends it.
-                    if (!cookMode) {
+                    // Kitchen tools and custom timers belong in cook mode; reading mode stays calm
+                    // with just "Let's cook!" and the overflow menu (Edit, Share, Print).
+                    if (cookMode) {
+                        if (onKitchenTools != null) {
+                            IconButton(onClick = onKitchenTools) { Icon(Icons.Filled.Scale, "Kitchen tools: converter and reference") }
+                        }
+                        IconButton(onClick = onCustomTimer) { Icon(Icons.Filled.Timer, "New timer") }
+                    } else {
                         Button(
                             onClick = onStartCooking,
                             shape = CircleShape,
@@ -653,7 +682,13 @@ fun RecipeDetailContent(
                             Spacer(Modifier.width(6.dp))
                             Text(LETS_COOK, style = MaterialTheme.typography.labelLarge)
                         }
-                        if (onShare != null) ShareOverflowButton(onShare = { onShare(it, scale) })
+                        if (onEdit != null || onShare != null || onDelete != null) {
+                            RecipeOverflowButton(
+                                onEdit = onEdit,
+                                onShare = onShare?.let { share -> { kind -> share(kind, scale) } },
+                                onDelete = onDelete,
+                            )
+                        }
                     }
                 },
             )
@@ -1026,28 +1061,52 @@ private fun stepInView(state: LazyListState): Int? {
 }
 
 @Composable
-private fun ShareOverflowButton(onShare: (ShareKind) -> Unit) {
+private fun RecipeOverflowButton(
+    onEdit: (() -> Unit)?,
+    onShare: ((ShareKind) -> Unit)?,
+    onDelete: (() -> Unit)? = null,
+) {
     var open by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { open = true }) {
-            Icon(Icons.Filled.MoreVert, contentDescription = "Share or print")
+            Icon(Icons.Filled.MoreVert, contentDescription = "More options")
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            DropdownMenuItem(
-                text = { Text("Share as text") },
-                leadingIcon = { Icon(Icons.AutoMirrored.Filled.Notes, contentDescription = null) },
-                onClick = { open = false; onShare(ShareKind.Text) },
-            )
-            DropdownMenuItem(
-                text = { Text("Share as PDF") },
-                leadingIcon = { Icon(Icons.Filled.PictureAsPdf, contentDescription = null) },
-                onClick = { open = false; onShare(ShareKind.Pdf) },
-            )
-            DropdownMenuItem(
-                text = { Text("Print") },
-                leadingIcon = { Icon(Icons.Filled.Print, contentDescription = null) },
-                onClick = { open = false; onShare(ShareKind.Print) },
-            )
+            if (onEdit != null) {
+                DropdownMenuItem(
+                    text = { Text("Edit recipe") },
+                    leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
+                    onClick = { open = false; onEdit() },
+                )
+            }
+            if (onShare != null) {
+                DropdownMenuItem(
+                    text = { Text("Share as text") },
+                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.Notes, contentDescription = null) },
+                    onClick = { open = false; onShare(ShareKind.Text) },
+                )
+                DropdownMenuItem(
+                    text = { Text("Share as PDF") },
+                    leadingIcon = { Icon(Icons.Filled.PictureAsPdf, contentDescription = null) },
+                    onClick = { open = false; onShare(ShareKind.Pdf) },
+                )
+                DropdownMenuItem(
+                    text = { Text("Print") },
+                    leadingIcon = { Icon(Icons.Filled.Print, contentDescription = null) },
+                    onClick = { open = false; onShare(ShareKind.Print) },
+                )
+            }
+            if (onDelete != null) {
+                if (onEdit != null || onShare != null) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                }
+                val errorColor = MaterialTheme.colorScheme.error
+                DropdownMenuItem(
+                    text = { Text("Delete recipe", color = errorColor) },
+                    leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = errorColor) },
+                    onClick = { open = false; onDelete() },
+                )
+            }
         }
     }
 }
