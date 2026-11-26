@@ -634,15 +634,14 @@ fun RecipeDetailContent(
                     if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                 },
                 actions = {
-                    if (onEdit != null && !cookMode) {
-                        IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, "Edit recipe") }
-                    }
-                    if (onKitchenTools != null) {
-                        IconButton(onClick = onKitchenTools) { Icon(Icons.Filled.Scale, "Kitchen tools: converter and reference") }
-                    }
-                    IconButton(onClick = onCustomTimer) { Icon(Icons.Filled.Timer, "New timer") }
-                    // In cook mode the back arrow leaves it, and "Done cooking" ends it.
-                    if (!cookMode) {
+                    // Kitchen tools and custom timers belong in cook mode; reading mode stays calm
+                    // with just "Let's cook!" and the overflow menu (Edit, Share, Print).
+                    if (cookMode) {
+                        if (onKitchenTools != null) {
+                            IconButton(onClick = onKitchenTools) { Icon(Icons.Filled.Scale, "Kitchen tools: converter and reference") }
+                        }
+                        IconButton(onClick = onCustomTimer) { Icon(Icons.Filled.Timer, "New timer") }
+                    } else {
                         Button(
                             onClick = onStartCooking,
                             shape = CircleShape,
@@ -653,7 +652,12 @@ fun RecipeDetailContent(
                             Spacer(Modifier.width(6.dp))
                             Text(LETS_COOK, style = MaterialTheme.typography.labelLarge)
                         }
-                        if (onShare != null) ShareOverflowButton(onShare = { onShare(it, scale) })
+                        if (onEdit != null || onShare != null) {
+                            RecipeOverflowButton(
+                                onEdit = onEdit,
+                                onShare = onShare?.let { share -> { kind -> share(kind, scale) } },
+                            )
+                        }
                     }
                 },
             )
@@ -1026,28 +1030,40 @@ private fun stepInView(state: LazyListState): Int? {
 }
 
 @Composable
-private fun ShareOverflowButton(onShare: (ShareKind) -> Unit) {
+private fun RecipeOverflowButton(
+    onEdit: (() -> Unit)?,
+    onShare: ((ShareKind) -> Unit)?,
+) {
     var open by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { open = true }) {
-            Icon(Icons.Filled.MoreVert, contentDescription = "Share or print")
+            Icon(Icons.Filled.MoreVert, contentDescription = "More options")
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            DropdownMenuItem(
-                text = { Text("Share as text") },
-                leadingIcon = { Icon(Icons.AutoMirrored.Filled.Notes, contentDescription = null) },
-                onClick = { open = false; onShare(ShareKind.Text) },
-            )
-            DropdownMenuItem(
-                text = { Text("Share as PDF") },
-                leadingIcon = { Icon(Icons.Filled.PictureAsPdf, contentDescription = null) },
-                onClick = { open = false; onShare(ShareKind.Pdf) },
-            )
-            DropdownMenuItem(
-                text = { Text("Print") },
-                leadingIcon = { Icon(Icons.Filled.Print, contentDescription = null) },
-                onClick = { open = false; onShare(ShareKind.Print) },
-            )
+            if (onEdit != null) {
+                DropdownMenuItem(
+                    text = { Text("Edit recipe") },
+                    leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
+                    onClick = { open = false; onEdit() },
+                )
+            }
+            if (onShare != null) {
+                DropdownMenuItem(
+                    text = { Text("Share as text") },
+                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.Notes, contentDescription = null) },
+                    onClick = { open = false; onShare(ShareKind.Text) },
+                )
+                DropdownMenuItem(
+                    text = { Text("Share as PDF") },
+                    leadingIcon = { Icon(Icons.Filled.PictureAsPdf, contentDescription = null) },
+                    onClick = { open = false; onShare(ShareKind.Pdf) },
+                )
+                DropdownMenuItem(
+                    text = { Text("Print") },
+                    leadingIcon = { Icon(Icons.Filled.Print, contentDescription = null) },
+                    onClick = { open = false; onShare(ShareKind.Print) },
+                )
+            }
         }
     }
 }

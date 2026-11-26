@@ -49,7 +49,7 @@ your own Mealie server.
 - **Cooking notes.** Tap the mic in cook mode and say what happened ("needed 10 more minutes").
   Notes are tagged with the step on screen and saved to the recipe's timeline in Mealie, ready for
   an assistant to review.
-- **Kitchen tools.** The scale button in a recipe, cook mode and whole-meal cook mode opens a
+- **Kitchen tools.** The scale button in cook mode and whole-meal cook mode opens a
   sheet over the page with a unit converter (cups, spoons, fl oz, pints, quarts, gallons, ml, l,
   g, kg, oz and lb) and a kitchen reference: safe meat temperatures, steak doneness, oven
   temperatures with gas marks, substitutions, measures, pan sizes, eggs and grains, and food
@@ -80,8 +80,8 @@ your own Mealie server.
   shopping list properly. Leave a time blank if you don't know it; cook time 0 means no cooking.
 - **Add any recipe to any grocery list.** Pick the list (or make a new one), choose the servings and
   untick what you already have. Works offline; Mealie scales and merges the lines on the next sync.
-- **Share or print any recipe.** The **⋮** menu in a recipe's top bar sends it as text (messages, email,
-  notes) or as a PDF, or opens Android's print dialog (which can also save a PDF). Amounts match the
+- **Share, print or edit any recipe.** The **⋮** menu in a recipe's top bar lets you edit the recipe, send it as text (messages, email,
+  notes) or as a PDF, or open Android's print dialog (which can also save a PDF). Amounts match the
   servings you've picked.
 - **Meal plan.** The next three weeks; planned recipes are downloaded ahead so they open offline. "Past week" at the top opens the last seven days, so a meal that didn't get made can be opened or moved to today ("Make it today").
 - **Phone and tablet.** On a tablet, a recipe opens as a two-pane cookbook spread — ingredients on the left, method steps on the right — in both reading and cook mode.
@@ -199,7 +199,7 @@ The **Serves** control next to Ingredients scales every amount, including the "Y
 
 ## Kitchen tools: converter and reference
 
-The scale button at the top of a recipe (also in cook mode) and of whole-meal cook mode opens Kitchen tools in a sheet, so you don't lose your place. It has two tabs, and remembers which one you used last.
+The scale button at the top of cook mode and whole-meal cook mode opens Kitchen tools in a sheet, so you don't lose your place. It has two tabs, and remembers which one you used last.
 
 **Converter.** Type an amount, pick its unit, and it shows that amount in every other unit. Volumes are US measures (1 cup = 236.6 ml, 16 tbsp). Weight and volume only convert into each other once you pick an ingredient, because a cup of flour (125 g) weighs far less than a cup of sugar (200 g). The built-in list covers common ingredients (water, milk, oil, butter, honey, flours, sugars, cocoa, cornstarch, rice, oats, table salt) at typical weights for a level cup, so treat those as good to a few percent. Everything works offline. The list is in `data/cook/UnitConversion.kt` if you want to add an ingredient.
 
