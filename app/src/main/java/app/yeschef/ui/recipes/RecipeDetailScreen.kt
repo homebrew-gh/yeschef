@@ -97,8 +97,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Scale
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.outlined.LightMode
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -285,6 +283,7 @@ fun RecipeDetailScreen(
     val dictate = rememberDictation(
         prompt = { noteStep?.let { "Note for step ${it + 1}" } ?: "Cooking note" },
         onText = ::addNote,
+        onFallbackToType = { typingNote = true },
     )
     fun startNote(step: Int?) {
         noteStep = step
@@ -635,21 +634,6 @@ fun RecipeDetailContent(
                     if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                 },
                 actions = {
-                    if (cookMode && detail != null && onAddNote != null) {
-                        IconButton(onClick = { onAddNote(stepInView(listState)) }) {
-                            BadgedBox(
-                                badge = {
-                                    if (noteCount > 0) {
-                                        Badge(containerColor = colors.tertiary, contentColor = colors.onTertiary) {
-                                            Text("$noteCount")
-                                        }
-                                    }
-                                },
-                            ) {
-                                Icon(Icons.Filled.Mic, contentDescription = "Add a cooking note")
-                            }
-                        }
-                    }
                     if (onEdit != null && !cookMode) {
                         IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, "Edit recipe") }
                     }
@@ -676,6 +660,11 @@ fun RecipeDetailContent(
         },
         containerColor = colors.background,
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        floatingActionButton = {
+            if (cookMode && detail != null && onAddNote != null) {
+                CookNoteButton(noteCount) { onAddNote(stepInView(listState)) }
+            }
+        },
     ) { padding ->
         if (detail == null) {
             Text(notLoadedMessage, Modifier.padding(padding).padding(24.dp), style = MaterialTheme.typography.bodyLarge)
@@ -949,6 +938,7 @@ fun RecipeDetailContent(
             }
         }
 
+        val methodBottomPadding = if (cookMode && onAddNote != null) 96.dp else 32.dp
         if (wide) {
             // Open cookbook spread on tablets: ingredients stay visible on the left while cooking on the right.
             Row(Modifier.padding(padding).fillMaxSize()) {
@@ -963,7 +953,7 @@ fun RecipeDetailContent(
                 LazyColumn(
                     Modifier.weight(0.6f).fillMaxHeight(),
                     state = listState,
-                    contentPadding = PaddingValues(bottom = 32.dp),
+                    contentPadding = PaddingValues(bottom = methodBottomPadding),
                 ) {
                     methodAndFooterItems()
                 }
@@ -972,7 +962,7 @@ fun RecipeDetailContent(
             LazyColumn(
                 Modifier.padding(padding).fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = 860.dp),
                 state = listState,
-                contentPadding = PaddingValues(bottom = 32.dp),
+                contentPadding = PaddingValues(bottom = methodBottomPadding),
             ) {
                 recipeHeaderItems()
                 ingredientsItems(collapsible = cookMode)
