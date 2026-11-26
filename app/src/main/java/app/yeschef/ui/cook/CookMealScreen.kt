@@ -278,6 +278,7 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
     val dictate = rememberDictation(
         prompt = { noteFor?.let { t -> t.recipe.name + (t.step?.let { ", step ${it + 1}" } ?: "") } ?: "Cooking note" },
         onText = ::addNote,
+        onFallbackToType = { typingNote = true },
     )
     fun startNote(target: MealNoteTarget) {
         noteFor = target
