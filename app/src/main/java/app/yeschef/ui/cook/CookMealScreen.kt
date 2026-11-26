@@ -36,6 +36,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -50,6 +52,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -61,6 +64,8 @@ import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Scale
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material3.AlertDialog
@@ -72,10 +77,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -100,6 +109,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yeschef.AppContainer
 import app.yeschef.data.cook.CookTimer
+import app.yeschef.data.cook.MealPrepStep
 import app.yeschef.data.cook.MealRecipeIn
 import app.yeschef.data.cook.MealSession
 import app.yeschef.data.cook.MealStepIn
@@ -118,6 +128,7 @@ import app.yeschef.data.remote.RecipeDetailDto
 import app.yeschef.data.sync.SyncScheduler
 import app.yeschef.ui.SectionLabel
 import app.yeschef.ui.YcTopBar
+import app.yeschef.ui.isWide
 import app.yeschef.ui.recipes.StepIngredients
 import app.yeschef.ui.recipes.stepIngredientRows
 import app.yeschef.ui.recipes.stepIngredientsFor
@@ -167,6 +178,12 @@ fun defaultReadyAt(date: LocalDate, entryType: String?, leadSeconds: Long, now: 
     return maxOf(usual, earliestReadyAt(leadSeconds, now))
 }
 
+/** Rounds a timestamp to the nearest 5-minute mark so the timeline avoids false minute precision. */
+fun roundToFiveMin(epochMs: Long): Long {
+    val five = 5 * 60_000L
+    return ((epochMs + five / 2) / five) * five
+}
+
 /** Now plus the meal's lead time, rounded up to the next five minutes. */
 fun earliestReadyAt(leadSeconds: Long, now: Long): Long {
     val five = 5 * 60_000L
@@ -212,10 +229,15 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
         while (true) { delay(30_000); value = System.currentTimeMillis() }
     }
     var chosenReadyAt by rememberSaveable(request.encode()) { mutableStateOf<Long?>(null) }
+    var startNowMode by rememberSaveable(request.encode()) { mutableStateOf(false) }
     val paused = started && session?.pausedAt != null
     // While paused the ready time keeps moving back, so the timeline stays where it stopped.
-    val readyAt = (if (started) session?.readyAtNow(now) else null) ?: chosenReadyAt
-        ?: defaultReadyAt(request.date, request.entryType, timeline.leadSeconds, now)
+    val readyAt = when {
+        started -> session?.readyAtNow(now) ?: defaultReadyAt(request.date, request.entryType, timeline.leadSeconds, now)
+        startNowMode -> earliestReadyAt(timeline.leadSeconds, now)
+        chosenReadyAt != null -> chosenReadyAt!!
+        else -> defaultReadyAt(request.date, request.entryType, timeline.leadSeconds, now)
+    }
 
     val notifyPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     fun begin(at: Long) {
@@ -237,6 +259,7 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
     if (picking) {
         ReadyTimeDialog(readyAt, onDismiss = { picking = false }) { at ->
             picking = false
+            startNowMode = false
             chosenReadyAt = at
             if (started) begin(at) // re-plan the reminders for the new time
         }
@@ -439,9 +462,20 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
         },
         keepScreenOn = keepOn,
         onToggleScreen = { keepOn = !keepOn },
+        startNowMode = startNowMode,
+        onStartNowMode = { nowMode ->
+            startNowMode = nowMode
+            if (nowMode) chosenReadyAt = null
+        },
         onPickTime = { picking = true },
-        onUseEarliest = { chosenReadyAt = earliestReadyAt(timeline.leadSeconds, System.currentTimeMillis()) },
-        onStart = { begin(readyAt) },
+        onUseEarliest = {
+            startNowMode = true
+            chosenReadyAt = null
+        },
+        onStart = {
+            val target = if (startNowMode) earliestReadyAt(timeline.leadSeconds, System.currentTimeMillis()) else readyAt
+            begin(target)
+        },
         onFinish = {
             if (noteCount > 0) {
                 markCookedOnReview = true
@@ -474,13 +508,14 @@ data class MealNoteTarget(val recipe: MealRecipeView, val step: Int?)
 
 /** The choices for a new note: the steps happening now (or first, before starting), then each dish. */
 fun noteTargets(cookable: List<MealRecipeView>, timeline: MealTimeline, readyAt: Long, now: Long, started: Boolean): List<MealNoteTarget> {
-    val slots = timeline.steps.groupBy { (readyAt - it.startsBefore * 1000) / 60_000 * 60_000 }.toList()
+    val slots = timeline.steps.groupBy { roundToFiveMin(readyAt - it.startsBefore * 1000) }.toList()
     val slot = (if (started) slots.lastOrNull { it.first <= now } else null) ?: slots.firstOrNull()
     val steps = slot?.second.orEmpty().mapNotNull { s -> cookable.getOrNull(s.recipeIndex)?.let { MealNoteTarget(it, s.stepIndex) } }
     return steps + cookable.map { MealNoteTarget(it, null) }
 }
 
 /** Stateless meal cook mode, also used for screenshots. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CookMealContent(
     title: String,
@@ -497,6 +532,8 @@ fun CookMealContent(
     onShift: ((Long) -> Unit)? = null,
     keepScreenOn: Boolean,
     onToggleScreen: () -> Unit,
+    startNowMode: Boolean = false,
+    onStartNowMode: ((Boolean) -> Unit)? = null,
     onPickTime: () -> Unit,
     onUseEarliest: () -> Unit,
     onStart: () -> Unit,
@@ -514,14 +551,16 @@ fun CookMealContent(
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
     val colors = MaterialTheme.colorScheme
+    val wide = isWide()
     val startAt = readyAt - timeline.leadSeconds * 1000
     val listState = rememberLazyListState()
     val scrollScope = rememberCoroutineScope()
-    // Each dish's ingredient list opens under its name. Ticks are shared with the step cards.
+    // Each dish's ingredient list opens under its name. Ticks are shared with prep and step cards.
     var open by rememberSaveable { mutableStateOf(openDishes.toList()) }
     var checked by remember { mutableStateOf(mapOf<String, Set<Int>>()) }
     var doneSteps by remember { mutableStateOf(setOf<String>()) }
     var filterSlug by rememberSaveable { mutableStateOf<String?>(null) }
+    var prepOpen by rememberSaveable { mutableStateOf(true) }
     fun toggle(slug: String, i: Int) {
         val ticked = checked[slug].orEmpty()
         checked = checked + (slug to if (i in ticked) ticked - i else ticked + i)
@@ -530,13 +569,18 @@ fun CookMealContent(
         val key = "$slug:$stepIndex"
         doneSteps = if (key in doneSteps) doneSteps - key else doneSteps + key
     }
-    // Merged steps, optionally filtered to one dish, bucketed by the minute they start.
+    val visiblePrep = remember(timeline, cookable, filterSlug) {
+        if (filterSlug == null) timeline.prepSteps
+        else timeline.prepSteps.filter { cookable.getOrNull(it.recipeIndex)?.slug == filterSlug }
+    }
+    val showPrepSection = visiblePrep.isNotEmpty() || timeline.ovenRequirements.isNotEmpty() || timeline.boilWaterDishes.isNotEmpty()
+    // Merged timed steps, optionally filtered to one dish, rounded to 5-minute marks.
     val visibleSteps = remember(timeline, cookable, filterSlug) {
         if (filterSlug == null) timeline.steps
         else timeline.steps.filter { cookable.getOrNull(it.recipeIndex)?.slug == filterSlug }
     }
     val slots = remember(visibleSteps, readyAt) {
-        visibleSteps.groupBy { (readyAt - it.startsBefore * 1000) / 60_000 * 60_000 }.toList()
+        visibleSteps.groupBy { roundToFiveMin(readyAt - it.startsBefore * 1000) }.toList()
     }
     // The slot in progress: the latest one that has started.
     val current = if (started) slots.lastOrNull { it.first <= now }?.first else null
@@ -550,6 +594,185 @@ fun CookMealContent(
             }
         }
     }
+
+    fun LazyListScope.scheduleAndDishesItems() {
+        item(key = "ready-card") {
+            ReadyCard(
+                readyAt = readyAt, startAt = startAt, leadSeconds = timeline.leadSeconds,
+                now = now, started = started, nextReminder = nextReminder,
+                zone = zone, startNowMode = startNowMode, onStartNowMode = onStartNowMode,
+                onPickTime = onPickTime, onUseEarliest = onUseEarliest, onStart = onStart, onFinish = onFinish,
+                paused = paused, onPause = onPause, onResume = onResume, onShift = onShift,
+                canStart = cookable.isNotEmpty(),
+            )
+        }
+        item(key = "dishes") {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                recipes.forEach { r ->
+                    val plan = cookable.indexOf(r).takeIf { it >= 0 }?.let { timeline.recipes.getOrNull(it) }
+                    val isOpen = r.slug in open
+                    val dishScale = scales[r.slug] ?: 1.0
+                    RecipeLine(
+                        r = r,
+                        startAt = plan?.takeIf { it.totalSeconds > 0 }?.let { readyAt - it.startsBefore * 1000 },
+                        totalSeconds = plan?.totalSeconds,
+                        prepSeconds = plan?.prepSeconds,
+                        timesKnown = plan?.timesKnown,
+                        zone = zone,
+                        open = isOpen,
+                        onToggle = if (r.detail != null) ({ open = if (isOpen) open - r.slug else open + r.slug }) else null,
+                    )
+                    if (isOpen) {
+                        DishIngredients(
+                            recipe = r,
+                            checked = checked[r.slug].orEmpty(),
+                            scale = dishScale,
+                            onScaleChange = onScaleChange?.let { cb -> { s -> cb(r.slug, s) } },
+                            onToggle = { toggle(r.slug, it) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun LazyListScope.prepAndTimelineItems() {
+        if (cookable.size >= 2) {
+            item(key = "dish-filter") {
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilterChip(
+                        selected = filterSlug == null,
+                        onClick = { filterSlug = null },
+                        label = { Text("All dishes") },
+                    )
+                    cookable.forEach { r ->
+                        FilterChip(
+                            selected = filterSlug == r.slug,
+                            onClick = { filterSlug = if (filterSlug == r.slug) null else r.slug },
+                            label = { Text(r.name, maxLines = 1) },
+                            leadingIcon = { Box(Modifier.size(8.dp).background(r.color, CircleShape)) },
+                        )
+                    }
+                }
+            }
+        }
+        if (showPrepSection) {
+            item(key = "prep-header") {
+                val donePrep = visiblePrep.count { p ->
+                    val slug = cookable.getOrNull(p.recipeIndex)?.slug ?: return@count false
+                    "$slug:${p.stepIndex}" in doneSteps
+                }
+                Row(
+                    Modifier.fillMaxWidth().clickable { prepOpen = !prepOpen }.padding(top = 6.dp, bottom = 2.dp, start = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("PREP & SETUP", style = OverlineStyle, color = colors.tertiary)
+                        Text(
+                            when {
+                                visiblePrep.isEmpty() -> "Before you start · no clock"
+                                donePrep == visiblePrep.size -> "All ${visiblePrep.size} prep steps done"
+                                donePrep > 0 -> "$donePrep of ${visiblePrep.size} done · untimed"
+                                else -> "Do at your own pace before starting the clock"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.onSurfaceVariant,
+                        )
+                    }
+                    Icon(
+                        if (prepOpen) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                        contentDescription = if (prepOpen) "Collapse prep" else "Expand prep",
+                        tint = colors.onSurfaceVariant,
+                    )
+                }
+            }
+            if (prepOpen) {
+                if (timeline.ovenRequirements.isNotEmpty() || timeline.boilWaterDishes.isNotEmpty()) {
+                    item(key = "setup-cues") {
+                        SetupCuesCard(timeline)
+                    }
+                }
+                visiblePrep.forEach { p ->
+                    val r = cookable.getOrNull(p.recipeIndex) ?: return@forEach
+                    item(key = "prep-${r.slug}-${p.stepIndex}") {
+                        val stepDone = "${r.slug}:${p.stepIndex}" in doneSteps
+                        PrepStepCard(
+                            recipe = r,
+                            stepIndex = p.stepIndex,
+                            checked = checked[r.slug].orEmpty(),
+                            scale = scales[r.slug] ?: 1.0,
+                            done = stepDone,
+                            onToggleDone = { toggleStep(r.slug, p.stepIndex) },
+                            onToggle = { toggle(r.slug, it) },
+                        )
+                    }
+                }
+            }
+        }
+        if (slots.isNotEmpty()) {
+            item(key = "timeline-header") { SectionLabel("Timed cooking", Modifier.padding(top = 4.dp)) }
+        }
+        slots.forEach { (at, steps) ->
+            item(key = "t-$at") {
+                val past = current != null && at < current
+                val allDone = steps.all { s -> "${cookable[s.recipeIndex].slug}:${s.stepIndex}" in doneSteps }
+                val slotDimmed = allDone || (past && doneSteps.isEmpty())
+                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).alpha(if (slotDimmed) 0.55f else 1f)) {
+                    Column(Modifier.width(88.dp).padding(top = 10.dp, end = 6.dp)) {
+                        Text(
+                            "~${clockText(at, zone)}",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (at == current) colors.primary else colors.onSurface,
+                        )
+                        if (at == current) Text("NOW", style = OverlineStyle, color = colors.primary)
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        steps.forEach { s ->
+                            val r = cookable[s.recipeIndex]
+                            val stepDone = "${r.slug}:${s.stepIndex}" in doneSteps
+                            StepCard(
+                                recipe = r,
+                                stepIndex = s.stepIndex,
+                                timelineStep = s,
+                                checked = checked[r.slug].orEmpty(),
+                                scale = scales[r.slug] ?: 1.0,
+                                done = stepDone,
+                                onToggleDone = { toggleStep(r.slug, s.stepIndex) },
+                                onToggle = { toggle(r.slug, it) },
+                                activeTimers = activeTimers,
+                                now = now,
+                                onStartTimer = onStartTimer,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        if (slots.isNotEmpty()) {
+            item(key = "ready-footer") {
+                Text(
+                    "Ready around ${clockText(roundToFiveMin(readyAt), zone)}",
+                    Modifier.padding(start = 88.dp, top = 4.dp),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = colors.tertiary,
+                )
+            }
+        }
+    }
+
+    // Count items preceding the first timeline slot inside listState so "Jump to step" lands exactly.
+    val timelineOffset = (if (!wide) 2 else 0) +
+        (if (cookable.size >= 2) 1 else 0) +
+        (if (showPrepSection) {
+            1 + if (prepOpen) {
+                (if (timeline.ovenRequirements.isNotEmpty() || timeline.boilWaterDishes.isNotEmpty()) 1 else 0) + visiblePrep.size
+            } else 0
+        } else 0) +
+        (if (slots.isNotEmpty()) 1 else 0)
 
     Scaffold(
         topBar = {
@@ -588,9 +811,7 @@ fun CookMealContent(
                     modifier = Modifier.fillMaxWidth().clickable {
                         val idx = slots.indexOfFirst { it.first == current }
                         if (idx >= 0) {
-                            // Header items before slots: ReadyCard, RecipeLines, Timeline header (+ optional dish filter)
-                            val offset = 3 + if (cookable.size >= 2) 1 else 0
-                            scrollScope.launch { listState.animateScrollToItem(offset + idx) }
+                            scrollScope.launch { listState.animateScrollToItem(timelineOffset + idx) }
                         }
                     },
                 ) {
@@ -599,7 +820,7 @@ fun CookMealContent(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            "NOW · ${clockText(current, zone)}",
+                            "NOW · ~${clockText(current, zone)}",
                             style = OverlineStyle,
                             color = colors.onPrimaryContainer,
                             modifier = Modifier.weight(1f),
@@ -608,110 +829,145 @@ fun CookMealContent(
                     }
                 }
             }
-            LazyColumn(
-                Modifier.weight(1f).fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = 860.dp),
-                state = listState,
-                // Room under the last step for the note button.
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = if (onAddNote != null) 96.dp else 32.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                item {
-                    ReadyCard(
-                        readyAt = readyAt, startAt = startAt, now = now, started = started, nextReminder = nextReminder,
-                        zone = zone, onPickTime = onPickTime, onUseEarliest = onUseEarliest, onStart = onStart, onFinish = onFinish,
-                        paused = paused, onPause = onPause, onResume = onResume, onShift = onShift,
-                        canStart = cookable.isNotEmpty(),
+            if (wide) {
+                // Tablet two-pane layout: schedule + expandable dish ingredients on the left,
+                // untimed prep + live timed timeline on the right.
+                Row(Modifier.weight(1f).fillMaxSize()) {
+                    LazyColumn(
+                        Modifier.weight(0.4f).fillMaxHeight(),
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 32.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        scheduleAndDishesItems()
+                    }
+                    VerticalDivider(color = colors.outlineVariant.copy(alpha = 0.6f))
+                    LazyColumn(
+                        Modifier.weight(0.6f).fillMaxHeight(),
+                        state = listState,
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = if (onAddNote != null) 96.dp else 32.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        prepAndTimelineItems()
+                    }
+                }
+            } else {
+                LazyColumn(
+                    Modifier.weight(1f).fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = 860.dp),
+                    state = listState,
+                    // Room under the last step for the note button.
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = if (onAddNote != null) 96.dp else 32.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    scheduleAndDishesItems()
+                    prepAndTimelineItems()
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SetupCuesCard(timeline: MealTimeline) {
+    val colors = MaterialTheme.colorScheme
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            timeline.ovenRequirements.forEach { oven ->
+                Surface(shape = CircleShape, color = colors.tertiaryContainer) {
+                    Row(
+                        Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Filled.Whatshot, contentDescription = null, tint = colors.tertiary, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "Oven ${oven.tempLabel} · ${oven.recipeName}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = colors.onTertiaryContainer,
+                        )
+                    }
+                }
+            }
+            timeline.boilWaterDishes.forEach { dish ->
+                Surface(shape = CircleShape, color = colors.secondaryContainer) {
+                    Text(
+                        "Boil water · $dish",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = colors.onSecondaryContainer,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                     )
                 }
-                item {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        recipes.forEach { r ->
-                            val plan = cookable.indexOf(r).takeIf { it >= 0 }?.let { timeline.recipes.getOrNull(it) }
-                            val isOpen = r.slug in open
-                            val dishScale = scales[r.slug] ?: 1.0
-                            RecipeLine(
-                                r, plan?.let { readyAt - it.startsBefore * 1000 }, plan?.totalSeconds, plan?.timesKnown, zone,
-                                open = isOpen,
-                                onToggle = if (r.detail != null) ({ open = if (isOpen) open - r.slug else open + r.slug }) else null,
-                            )
-                            if (isOpen) {
-                                DishIngredients(
-                                    recipe = r,
-                                    checked = checked[r.slug].orEmpty(),
-                                    scale = dishScale,
-                                    onScaleChange = onScaleChange?.let { cb -> { s -> cb(r.slug, s) } },
-                                    onToggle = { toggle(r.slug, it) },
-                                )
-                            }
-                        }
-                    }
-                }
-                if (slots.isNotEmpty()) item { SectionLabel("Timeline", Modifier.padding(top = 4.dp)) }
-                if (cookable.size >= 2) {
-                    item(key = "dish-filter") {
-                        Row(
-                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            FilterChip(
-                                selected = filterSlug == null,
-                                onClick = { filterSlug = null },
-                                label = { Text("All dishes") },
-                            )
-                            cookable.forEach { r ->
-                                FilterChip(
-                                    selected = filterSlug == r.slug,
-                                    onClick = { filterSlug = if (filterSlug == r.slug) null else r.slug },
-                                    label = { Text(r.name, maxLines = 1) },
-                                    leadingIcon = { Box(Modifier.size(8.dp).background(r.color, CircleShape)) },
-                                )
-                            }
-                        }
-                    }
-                }
-                slots.forEach { (at, steps) ->
-                    item(key = "t-$at") {
-                        val past = current != null && at < current
-                        val allDone = steps.all { s -> "${cookable[s.recipeIndex].slug}:${s.stepIndex}" in doneSteps }
-                        val slotDimmed = allDone || (past && doneSteps.isEmpty())
-                        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).alpha(if (slotDimmed) 0.55f else 1f)) {
-                            Column(Modifier.width(78.dp).padding(top = 10.dp)) {
-                                Text(
-                                    clockText(at, zone),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = if (at == current) colors.primary else colors.onSurface,
-                                )
-                                if (at == current) Text("NOW", style = OverlineStyle, color = colors.primary)
-                            }
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                steps.forEach { s ->
-                                    val r = cookable[s.recipeIndex]
-                                    val stepDone = "${r.slug}:${s.stepIndex}" in doneSteps
-                                    StepCard(
-                                        recipe = r,
-                                        stepIndex = s.stepIndex,
-                                        timelineStep = s,
-                                        checked = checked[r.slug].orEmpty(),
-                                        scale = scales[r.slug] ?: 1.0,
-                                        done = stepDone,
-                                        onToggleDone = { toggleStep(r.slug, s.stepIndex) },
-                                        onToggle = { toggle(r.slug, it) },
-                                        activeTimers = activeTimers,
-                                        now = now,
-                                        onStartTimer = onStartTimer,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-                item {
+            }
+        }
+        if (timeline.hasOvenConflict) {
+            Surface(shape = MaterialTheme.shapes.medium, color = colors.errorContainer, modifier = Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.Warning, contentDescription = null, tint = colors.error, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
                     Text(
-                        "Ready at ${clockText(readyAt, zone)}",
-                        Modifier.padding(start = 78.dp, top = 4.dp),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = colors.tertiary,
+                        "Different oven temps (${timeline.ovenRequirements.joinToString(" vs ") { "${it.tempLabel} ${it.recipeName}" }}) — plan rack order or cook sequentially.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onErrorContainer,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PrepStepCard(
+    recipe: MealRecipeView,
+    stepIndex: Int,
+    checked: Set<Int>,
+    scale: Double,
+    done: Boolean,
+    onToggleDone: () -> Unit,
+    onToggle: (Int) -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val detail = recipe.detail ?: return
+    val step = detail.recipeInstructions.getOrNull(stepIndex) ?: return
+    val perStep = remember(detail) { stepIngredientsFor(detail) }
+    val firstUse = remember(perStep) { firstSteps(perStep) }
+    val used = perStep.getOrNull(stepIndex).orEmpty()
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = colors.surfaceContainerLow,
+        modifier = Modifier.fillMaxWidth().alpha(if (done) 0.55f else 1f),
+    ) {
+        Row(Modifier.height(IntrinsicSize.Min)) {
+            Box(Modifier.width(5.dp).fillMaxHeight().background(recipe.color))
+            Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp).weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "${recipe.name.uppercase()} · PREP",
+                        style = OverlineStyle,
+                        color = recipe.color,
+                        textDecoration = if (done) TextDecoration.LineThrough else null,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(onClick = onToggleDone, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            if (done) Icons.Filled.CheckCircle else Icons.Outlined.Circle,
+                            contentDescription = if (done) "Mark prep undone" else "Mark prep done",
+                            tint = if (done) colors.tertiary else colors.outline,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                }
+                step.title?.takeIf { it.isNotBlank() }?.let {
+                    Text(it, style = MaterialTheme.typography.titleSmall, color = colors.primary, modifier = Modifier.padding(top = 4.dp))
+                }
+                Text(step.text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 4.dp))
+                if (used.isNotEmpty()) {
+                    StepIngredients(
+                        lines = stepIngredientRows(detail, used, stepIndex, firstUse) { scaleIngredient(it, scale) },
+                        checked = checked,
+                        onToggle = onToggle,
                     )
                 }
             }
@@ -723,11 +979,14 @@ fun CookMealContent(
 private fun ReadyCard(
     readyAt: Long,
     startAt: Long,
+    leadSeconds: Long,
     now: Long,
     started: Boolean,
     nextReminder: String?,
     zone: ZoneId,
     canStart: Boolean,
+    startNowMode: Boolean = false,
+    onStartNowMode: ((Boolean) -> Unit)? = null,
     onPickTime: () -> Unit,
     onUseEarliest: () -> Unit,
     onStart: () -> Unit,
@@ -740,85 +999,125 @@ private fun ReadyCard(
     val colors = MaterialTheme.colorScheme
     Surface(shape = MaterialTheme.shapes.extraLarge, color = colors.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(18.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f).clickable(onClick = onPickTime)) {
-                    Text("READY AT", style = OverlineStyle, color = colors.tertiary)
-                    Text(clockText(readyAt, zone), style = MaterialTheme.typography.headlineMedium, color = colors.onSurface)
-                    Text(
-                        (if (startAt < now && !started) "Should have started " else "First step at ") + clockText(startAt, zone) + dayNote(startAt, now, zone),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (startAt < now && !started) colors.error else colors.onSurfaceVariant,
+            if (!started && onStartNowMode != null && leadSeconds > 0L) {
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+                    SegmentedButton(
+                        selected = startNowMode,
+                        onClick = { onStartNowMode(true) },
+                        shape = SegmentedButtonDefaults.itemShape(0, 2),
+                        label = { Text("Start now") },
+                    )
+                    SegmentedButton(
+                        selected = !startNowMode,
+                        onClick = { onStartNowMode(false) },
+                        shape = SegmentedButtonDefaults.itemShape(1, 2),
+                        label = { Text("Ready at") },
                     )
                 }
-                TextButton(onClick = onPickTime) { Text("Change") }
             }
-            if (!started && startAt < now) {
-                TextButton(onClick = onUseEarliest, contentPadding = PaddingValues(0.dp)) { Text("Start now instead") }
-            }
-            Spacer(Modifier.height(10.dp))
-            if (started) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        if (paused) Icons.Filled.Pause else Icons.Filled.NotificationsActive, null,
-                        tint = if (paused) colors.tertiary else colors.primary, modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        when {
-                            paused -> "Paused. Reminders are off and the ready time moves back until you resume."
-                            else -> nextReminder?.let { "Next reminder: $it" } ?: "Reminders are on"
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (paused) {
-                        Button(onClick = onResume, modifier = Modifier.weight(1f)) {
-                            Icon(Icons.Filled.PlayArrow, null, Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Resume")
-                        }
-                    } else {
-                        FilledTonalButton(onClick = onPause, modifier = Modifier.weight(1f)) {
-                            Icon(Icons.Filled.Pause, null, Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Pause")
-                        }
-                    }
-                    OutlinedButton(onClick = onFinish, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Filled.Stop, null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Stop")
-                    }
-                }
-                if (!paused && onShift != null) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(top = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Text(
-                            "Nudge schedule",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = colors.onSurfaceVariant,
-                            modifier = Modifier.weight(1f),
-                        )
-                        TextButton(onClick = { onShift(-5 * 60_000L) }, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)) {
-                            Text("−5 min")
-                        }
-                        TextButton(onClick = { onShift(5 * 60_000L) }, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)) {
-                            Text("+5 min")
-                        }
-                    }
-                }
-            } else {
-                Button(onClick = onStart, enabled = canStart, modifier = Modifier.fillMaxWidth()) { Text("Start this meal") }
+            if (leadSeconds == 0L) {
+                Text("NO-COOK MEAL", style = OverlineStyle, color = colors.tertiary)
+                Text("Prep at your own pace", style = MaterialTheme.typography.headlineSmall, color = colors.onSurface)
                 Text(
-                    "You'll get a reminder when each part is due, even with the app closed.",
-                    Modifier.padding(top = 6.dp),
-                    style = MaterialTheme.typography.bodySmall,
+                    "No timed cooking steps — work through the prep list whenever you're ready.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            } else if (!started && startNowMode) {
+                Text("STARTING NOW", style = OverlineStyle, color = colors.tertiary)
+                Text("Ready ~${clockText(roundToFiveMin(readyAt), zone)}", style = MaterialTheme.typography.headlineMedium, color = colors.onSurface)
+                Text(
+                    "${formatShort(leadSeconds)} timed cooking after prep",
+                    style = MaterialTheme.typography.bodyMedium,
                     color = colors.onSurfaceVariant,
                 )
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f).clickable(onClick = onPickTime)) {
+                        Text("READY AROUND", style = OverlineStyle, color = colors.tertiary)
+                        Text(clockText(roundToFiveMin(readyAt), zone), style = MaterialTheme.typography.headlineMedium, color = colors.onSurface)
+                        Text(
+                            (if (startAt < now && !started) "Should have started ~" else "First timed step ~") +
+                                clockText(roundToFiveMin(startAt), zone) + dayNote(startAt, now, zone),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (startAt < now && !started) colors.error else colors.onSurfaceVariant,
+                        )
+                    }
+                    TextButton(onClick = onPickTime) { Text("Change") }
+                }
+                if (!started && startAt < now) {
+                    TextButton(onClick = onUseEarliest, contentPadding = PaddingValues(0.dp)) { Text("Start now instead") }
+                }
+            }
+            if (leadSeconds > 0L) {
+                Spacer(Modifier.height(10.dp))
+                if (started) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            if (paused) Icons.Filled.Pause else Icons.Filled.NotificationsActive, null,
+                            tint = if (paused) colors.tertiary else colors.primary, modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            when {
+                                paused -> "Paused. Reminders are off and the ready time moves back until you resume."
+                                else -> nextReminder?.let { "Next reminder: $it" } ?: "Reminders are on"
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (paused) {
+                            Button(onClick = onResume, modifier = Modifier.weight(1f)) {
+                                Icon(Icons.Filled.PlayArrow, null, Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Resume")
+                            }
+                        } else {
+                            FilledTonalButton(onClick = onPause, modifier = Modifier.weight(1f)) {
+                                Icon(Icons.Filled.Pause, null, Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Pause")
+                            }
+                        }
+                        OutlinedButton(onClick = onFinish, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Filled.Stop, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Stop")
+                        }
+                    }
+                    if (!paused && onShift != null) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                "Nudge schedule",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = colors.onSurfaceVariant,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = { onShift(-5 * 60_000L) }, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)) {
+                                Text("−5 min")
+                            }
+                            TextButton(onClick = { onShift(5 * 60_000L) }, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)) {
+                                Text("+5 min")
+                            }
+                        }
+                    }
+                } else {
+                    Button(onClick = onStart, enabled = canStart, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (startNowMode) "Start cooking now" else "Start timed cooking")
+                    }
+                    Text(
+                        "Prep at your own pace first, then start the clock for reminders when heat goes on.",
+                        Modifier.padding(top = 6.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
@@ -839,6 +1138,7 @@ private fun RecipeLine(
     r: MealRecipeView,
     startAt: Long?,
     totalSeconds: Long?,
+    prepSeconds: Long?,
     timesKnown: Boolean?,
     zone: ZoneId,
     open: Boolean = false,
@@ -858,8 +1158,9 @@ private fun RecipeLine(
         Text(
             when {
                 r.detail == null -> "Not downloaded yet; connect the VPN"
+                totalSeconds == 0L -> if (prepSeconds != null && prepSeconds > 0L) "Prep ahead · ~${formatShort(prepSeconds)}" else "Prep ahead"
                 startAt != null && totalSeconds != null ->
-                    "Starts ${clockText(startAt, zone)} · ${formatShort(totalSeconds)}" + if (timesKnown == false) " (estimated)" else ""
+                    "~${clockText(roundToFiveMin(startAt), zone)} · ${formatShort(totalSeconds)}" + if (timesKnown == false) " (est.)" else ""
                 else -> ""
             },
             style = MaterialTheme.typography.labelMedium,

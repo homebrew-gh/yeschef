@@ -11,17 +11,34 @@ data class MealRecipeIn(
 
 data class MealStepIn(val text: String, val durationSeconds: Int? = null)
 
-/** How a recipe fits into the meal: when it starts, relative to the moment the meal is ready. */
+/** How a recipe fits into the meal's timed cooking phase, relative to the ready time. */
 data class MealRecipePlan(
     val recipeIndex: Int,
-    /** Seconds before the ready time that this recipe starts. */
+    /** Seconds before the ready time that this recipe's timed cooking phase starts (0 for prep-only dishes). */
     val startsBefore: Long,
+    /** Duration of this recipe's timed cooking phase in seconds (0 for prep-only dishes). */
     val totalSeconds: Long,
     /** False when Mealie had no prep, cook or total time and the length was estimated from the steps. */
     val timesKnown: Boolean,
+    /** Stated prep time from Mealie (if any), for reference alongside the untimed prep checklist. */
+    val prepSeconds: Long = 0L,
 )
 
-/** One step on the merged timeline. [startsBefore] counts back from the ready time. */
+/** An untimed mise-en-place step to do before starting the cooking clock. */
+data class MealPrepStep(
+    val recipeIndex: Int,
+    val stepIndex: Int,
+)
+
+/** An oven temperature mentioned in a recipe's steps. */
+data class OvenRequirement(
+    val recipeIndex: Int,
+    val recipeName: String,
+    val tempLabel: String,
+    val tempF: Int,
+)
+
+/** One step on the merged timed cooking timeline. [startsBefore] counts back from the ready time. */
 data class MealTimelineStep(
     val recipeIndex: Int,
     val stepIndex: Int,
@@ -32,50 +49,131 @@ data class MealTimelineStep(
     val passive: Boolean = false,
 )
 
-data class MealTimeline(val recipes: List<MealRecipePlan>, val steps: List<MealTimelineStep>) {
-    /** How long before the ready time the first recipe has to start. */
+data class MealTimeline(
+    val recipes: List<MealRecipePlan>,
+    val steps: List<MealTimelineStep>,
+    val prepSteps: List<MealPrepStep> = emptyList(),
+    val ovenRequirements: List<OvenRequirement> = emptyList(),
+    /** Names of dishes whose steps call for bringing water to a boil. */
+    val boilWaterDishes: List<String> = emptyList(),
+) {
+    /** How long before the ready time the first timed cooking step starts. */
     val leadSeconds: Long get() = recipes.maxOfOrNull { it.startsBefore } ?: 0L
+
+    /** True when two dishes require oven temperatures more than 15°F apart. */
+    val hasOvenConflict: Boolean
+        get() {
+            if (ovenRequirements.size < 2) return false
+            val minF = ovenRequirements.minOf { it.tempF }
+            val maxF = ovenRequirements.maxOf { it.tempF }
+            return maxF - minF > 15
+        }
 }
 
-/** Used for a step with no time of its own when nothing else tells us how long it takes. */
-private const val UNTIMED_STEP = 5 * 60L
-private const val MIN_STEP = 60L
+/** Generous default for untimed mid-cook transition steps ("drain, smash, drizzle" / "rest and carve"). */
+private const val MID_COOK_UNTIMED = 5 * 60L
 
 /**
- * Lays several recipes out so they all finish together. Each recipe starts its total time
- * before the meal is ready (Mealie's total time, else prep + cook). A recipe with no times
- * gets an estimate from its steps: their timers plus five minutes for each untimed step.
+ * Separates untimed prep work from the timed cooking clock, then lays out the timed cooking
+ * steps so every dish lands together.
  *
- * Inside a recipe, steps keep their order. A step with a timer ("simmer 20 minutes") takes
- * that long; the rest of the recipe's time is shared among the other steps. The merged
- * list is sorted by start, earliest first, so sides slot in while the main is in the oven.
+ * Leading untimed steps of each dish (chopping, trimming, rubbing, preheating) — and all steps
+ * of no-cook dishes — go into [MealTimeline.prepSteps] with no wall-clock timestamps, because
+ * prep speed and oven/burner warm-up vary by kitchen.
+ *
+ * Inside the timed cooking phase, explicit step timers are summed (so "bake 25 min, uncovered
+ * 20 min, rest 15 min" counts as 60 min) and are never squeezed shorter than the step says.
  */
 fun buildMealTimeline(recipes: List<MealRecipeIn>): MealTimeline {
     val plans = mutableListOf<MealRecipePlan>()
-    val steps = mutableListOf<MealTimelineStep>()
-    recipes.forEachIndexed { r, recipe ->
-        val stepTimes = recipe.steps.map { stepSeconds(it) }
-        val known = recipeSeconds(recipe)
-        val total = known ?: estimate(stepTimes)
-        plans += MealRecipePlan(r, total, total, known != null)
+    val timedSteps = mutableListOf<MealTimelineStep>()
+    val prepSteps = mutableListOf<MealPrepStep>()
+    val ovens = mutableListOf<OvenRequirement>()
+    val boilWater = mutableListOf<String>()
 
-        val lengths = spread(stepTimes, total)
+    recipes.forEachIndexed { r, recipe ->
+        // Detect oven temperatures and water-boiling setup cues across all steps.
+        detectOvenTemp(recipe.steps)?.let { (label, tempF) ->
+            ovens += OvenRequirement(r, recipe.name, label, tempF)
+        }
+        if (recipe.steps.any { BOIL_WATER.containsMatchIn(it.text) }) {
+            boilWater += recipe.name
+        }
+
+        val stepTimes = recipe.steps.map { stepSeconds(it) }
+        val firstTimedIdx = stepTimes.indexOfFirst { it != null }
+        val statedPrep = parseRecipeTime(recipe.prepTime) ?: 0L
+        val statedCook = parseRecipeTime(recipe.performTime)
+        val statedTotal = parseRecipeTime(recipe.totalTime)
+        val timesKnown = statedPrep > 0L || statedCook != null || (statedTotal != null && statedTotal > 0L)
+
+        if (firstTimedIdx < 0) {
+            // No-cook or fully untimed dish: everything belongs in the untimed Prep & Setup list.
+            recipe.steps.indices.forEach { s -> prepSteps += MealPrepStep(r, s) }
+            val prepEstimate = statedPrep.takeIf { it > 0 }
+                ?: statedTotal?.takeIf { it > 0 }
+                ?: (recipe.steps.size * MID_COOK_UNTIMED).coerceAtLeast(if (recipe.steps.isEmpty()) 0L else MID_COOK_UNTIMED)
+            plans += MealRecipePlan(
+                recipeIndex = r,
+                startsBefore = 0L,
+                totalSeconds = 0L,
+                timesKnown = timesKnown,
+                prepSeconds = prepEstimate,
+            )
+            return@forEachIndexed
+        }
+
+        // Leading untimed steps go to Prep & Setup (no clock pressure).
+        for (s in 0 until firstTimedIdx) {
+            prepSteps += MealPrepStep(r, s)
+        }
+
+        val cookStepTimes = stepTimes.subList(firstTimedIdx, stepTimes.size)
+        val timedSum = cookStepTimes.sumOf { it ?: 0L }
+        val midUntimedCount = cookStepTimes.count { it == null }
+        // Never squeeze explicit timers shorter than what the steps actually require.
+        val minCookSeconds = timedSum + midUntimedCount * MID_COOK_UNTIMED
+
+        val statedCookSpan = when {
+            statedCook != null && statedCook > 0L -> statedCook
+            statedTotal != null && statedTotal > 0L -> (statedTotal - statedPrep).coerceAtLeast(0L)
+            else -> null
+        }
+        val cookTotal = maxOf(minCookSeconds, statedCookSpan ?: 0L)
+
+        plans += MealRecipePlan(
+            recipeIndex = r,
+            startsBefore = cookTotal,
+            totalSeconds = cookTotal,
+            timesKnown = timesKnown,
+            prepSeconds = statedPrep,
+        )
+
+        val lengths = spreadGenerous(cookStepTimes, cookTotal)
         var elapsed = 0L
-        lengths.forEachIndexed { s, len ->
-            val explicitSec = stepTimes[s] ?: 0L
+        lengths.forEachIndexed { offset, len ->
+            val s = firstTimedIdx + offset
+            val explicitSec = cookStepTimes[offset] ?: 0L
             val passive = isPassiveStep(recipe.steps[s].text, explicitSec)
-            steps += MealTimelineStep(r, s, total - elapsed, durationSeconds = len, passive = passive)
+            timedSteps += MealTimelineStep(r, s, cookTotal - elapsed, durationSeconds = len, passive = passive)
             elapsed += len
         }
     }
+
     // Earliest first; at the same moment the longer-running recipe (usually the main) leads.
-    val order = steps.sortedWith(
+    val order = timedSteps.sortedWith(
         compareByDescending<MealTimelineStep> { it.startsBefore }
             .thenByDescending { plans[it.recipeIndex].totalSeconds }
             .thenBy { it.recipeIndex }
             .thenBy { it.stepIndex },
     )
-    return MealTimeline(plans, order)
+    return MealTimeline(
+        recipes = plans,
+        steps = order,
+        prepSteps = prepSteps,
+        ovenRequirements = ovens,
+        boilWaterDishes = boilWater,
+    )
 }
 
 /** Total time from Mealie: "total" if set, else prep + cook; null when none parse. */
@@ -113,37 +211,45 @@ fun parseRecipeTime(raw: String?): Long? {
     return found.sumOf { it.seconds }.takeIf { it > 0 }
 }
 
-/** A step's own time: Mealie's step duration, else the longest time in its text. */
+/** A step's own time: Mealie's step duration, else the sum of sequential durations in its text. */
 private fun stepSeconds(step: MealStepIn): Long? =
     step.durationSeconds?.toLong()?.takeIf { it > 0 }
-        ?: detectDurations(step.text).maxOfOrNull { it.seconds }
-
-private fun estimate(stepTimes: List<Long?>): Long =
-    stepTimes.sumOf { it ?: UNTIMED_STEP }.coerceAtLeast(UNTIMED_STEP)
+        ?: detectDurations(step.text).sumOf { it.seconds }.takeIf { it > 0 }
 
 /**
- * Splits [total] across the steps. Timed steps keep their time when it fits; the rest is
- * shared evenly among untimed steps. If the timers alone overrun the total, everything is
- * scaled down so the recipe still finishes on time.
+ * Splits [total] across the timed-phase steps without ever shrinking explicit step timers.
+ * Any surplus over explicit timers is distributed evenly across untimed mid-cook transitions
+ * (at least [MID_COOK_UNTIMED] each), or added as cushion on the first step if all steps are timed.
  */
-private fun spread(stepTimes: List<Long?>, total: Long): List<Long> {
+private fun spreadGenerous(stepTimes: List<Long?>, total: Long): List<Long> {
     if (stepTimes.isEmpty()) return emptyList()
     val timed = stepTimes.sumOf { it ?: 0L }
     val untimed = stepTimes.count { it == null }
-    val share = if (untimed == 0) 0L else ((total - timed) / untimed).coerceAtLeast(MIN_STEP)
-    val raw = stepTimes.map { it ?: share }
-    val sum = raw.sum()
-    if (sum <= 0 || sum == total) return raw
-    if (sum < total) {
-        // Spare time goes to the first untimed step (usually prep), else the first step,
-        // so a "simmer 20 minutes" stays 20 minutes.
-        val at = stepTimes.indexOfFirst { it == null }.takeIf { it >= 0 } ?: 0
-        return raw.toMutableList().also { it[at] += total - sum }
+    val share = if (untimed == 0) 0L else ((total - timed) / untimed).coerceAtLeast(MID_COOK_UNTIMED)
+    val raw = stepTimes.map { it ?: share }.toMutableList()
+    val remainder = total - raw.sum()
+    if (remainder > 0) {
+        val target = stepTimes.indexOfFirst { it == null }.takeIf { it >= 0 } ?: 0
+        raw[target] += remainder
     }
-    // The timers overrun the recipe's stated time: squeeze, keeping the proportions.
-    val scaled = raw.map { it * total / sum }.toMutableList()
-    scaled[scaled.lastIndex] += total - scaled.sum()
-    return scaled
+    return raw
+}
+
+private val OVEN_TEMP = Regex("""(?i)\b(\d{3})\s*°?\s*(F|C)\b""")
+private val OVEN_CONTEXT = Regex("""(?i)\b(oven|preheat|bake|roast|broil)\b""")
+private val BOIL_WATER = Regex("""(?i)\b(?:bring\b.{0,40}\bto\s+a\s+boil|boil\b.{0,30}\b(?:water|potatoes|pasta|noodles))\b""")
+
+/** Extracts the primary oven temperature from a recipe's steps, e.g. ("450°F", 450). */
+private fun detectOvenTemp(steps: List<MealStepIn>): Pair<String, Int>? {
+    for (step in steps) {
+        if (!OVEN_CONTEXT.containsMatchIn(step.text)) continue
+        val match = OVEN_TEMP.find(step.text) ?: continue
+        val num = match.groupValues[1].toIntOrNull() ?: continue
+        val unit = match.groupValues[2].uppercase()
+        val tempF = if (unit == "C") (num * 9 / 5) + 32 else num
+        if (tempF in 150..550) return "${num}°$unit" to tempF
+    }
+    return null
 }
 
 private val PASSIVE_VERBS = Regex(

@@ -55,7 +55,7 @@ fun planReminders(
     val lastByRecipe = mutableMapOf<Int, Long>()
     for (step in timeline.steps) {
         val at = readyAt - step.startsBefore * 1000
-        val first = step.stepIndex == 0
+        val first = step.recipeIndex !in lastByRecipe
         val afterGlobalGap = previousStart?.let { (at - it) / 1000 >= IDLE_GAP_SECONDS } ?: true
         val afterRecipeGap = lastByRecipe[step.recipeIndex]?.let { (at - it) / 1000 >= IDLE_GAP_SECONDS } ?: false
         previousStart = at

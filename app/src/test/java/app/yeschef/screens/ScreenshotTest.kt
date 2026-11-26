@@ -538,6 +538,7 @@ private fun Meal(started: Boolean, now: Long, openFirst: Boolean = false, paused
         paused = paused,
         keepScreenOn = started,
         onToggleScreen = {},
+        onStartNowMode = {},
         onPickTime = {},
         onUseEarliest = {},
         onStart = {},
