@@ -59,6 +59,15 @@ class CookbookTest {
         assertNull(Cookbook.minutes("overnight"))
     }
 
+    @Test fun compactTime() {
+        assertEquals("1 hr 10 min", Cookbook.compactTime("1 hour 10 minutes"))
+        assertEquals("1 hr 30 min", Cookbook.compactTime("PT1H30M"))
+        assertEquals("45 min", Cookbook.compactTime("45 minutes"))
+        assertEquals("overnight", Cookbook.compactTime("overnight"))
+        assertNull(Cookbook.compactTime("   "))
+        assertNull(Cookbook.compactTime(null))
+    }
+
     @Test fun lastCooked() {
         val today = LocalDate.of(2026, 11, 22)
         assertEquals("Cooked today", Cookbook.lastCookedText("2026-11-22T08:00:00Z", today))

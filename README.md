@@ -36,11 +36,11 @@ your own Mealie server.
   (YesChef remembers them). You get one list sorted by store section, each item tagged with the
   list it's on. Ticking an item updates its own list, and the add bar lets you pick which list a
   new item goes on.
-- **Cookbook.** Recipes read like a cookbook, with chapters from Mealie categories and filter chips
+- **Cookbook.** Recipes read like a cookbook, with horizontal chapter shelves in the "All" view (tap any chapter for a full grid), chapters from Mealie categories, and filter chips
   from protein and style tags (see [the cookbook scheme](#the-cookbook-categories-and-tags)). Sort by name, newest, rating,
   quickest or "not made in a while", or let the dice pick something.
-- **Cook mode ("Let's cook!").** Large text, screen stays awake, and each step shows the ingredients it needs
-  ("You'll need"). When you finish, YesChef offers to mark the recipe as cooked. Starting it, for one
+- **Cook mode ("Let's cook!").** Large text, screen stays awake, tap step numbers to check them off, and each step shows the ingredients it needs
+  ("You'll need") while the full ingredient list tucks neatly at the top on phones. When you finish, YesChef offers to mark the recipe as cooked. Starting it, for one
   recipe or a whole meal, plays a one-second scene picked at random: a wok tossing stir-fry, a
   cleaver chopping a carrot, or a pot steaming. Tap to skip; it's off when animations are turned off
   on the phone. In whole-meal cook mode, you can check off steps as you finish them, nudge the
@@ -80,11 +80,11 @@ your own Mealie server.
   shopping list properly. Leave a time blank if you don't know it; cook time 0 means no cooking.
 - **Add any recipe to any grocery list.** Pick the list (or make a new one), choose the servings and
   untick what you already have. Works offline; Mealie scales and merges the lines on the next sync.
-- **Share or print any recipe.** The **Share or print** button under a recipe's times sends it as text (messages, email,
+- **Share or print any recipe.** The **⋮** menu in a recipe's top bar sends it as text (messages, email,
   notes) or as a PDF, or opens Android's print dialog (which can also save a PDF). Amounts match the
   servings you've picked.
 - **Meal plan.** The next three weeks; planned recipes are downloaded ahead so they open offline. "Past week" at the top opens the last seven days, so a meal that didn't get made can be opened or moved to today ("Make it today").
-- **Phone and tablet.** On a tablet the recipe opens beside the list.
+- **Phone and tablet.** On a tablet, a recipe opens as a two-pane cookbook spread — ingredients on the left, method steps on the right — in both reading and cook mode.
 - **Light, dark or system theme.**
 
 ## Screenshots
