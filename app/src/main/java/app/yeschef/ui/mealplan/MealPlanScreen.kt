@@ -1,5 +1,6 @@
 package app.yeschef.ui.mealplan
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -13,12 +14,17 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -26,6 +32,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material.icons.filled.SoupKitchen
 import androidx.compose.material3.FilledTonalButton
@@ -79,9 +88,20 @@ import java.util.Locale
 @Composable
 fun MealPlanScreen(container: AppContainer, onOpenRecipe: (String) -> Unit, onCookMeal: (MealRequest) -> Unit) {
     val repo = container.repository
-    val today = remember { LocalDate.now() }
+    var today by remember { mutableStateOf(LocalDate.now()) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val now = LocalDate.now()
+                if (now != today) today = now
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     // The last week too, so a meal that didn't get made can still be found and moved.
-    val entries by remember { repo.mealPlan(today.minusDays(EARLIER_DAYS)) }.collectAsStateWithLifecycle(emptyList())
+    val entries by remember(today) { repo.mealPlan(today.minusDays(EARLIER_DAYS)) }.collectAsStateWithLifecycle(emptyList())
     val config by container.config.collectAsStateWithLifecycle()
     val recipes by remember { repo.recipes() }.collectAsStateWithLifecycle(emptyList())
     val sideSlugs = remember(recipes) { recipes.filter { Cookbook.chapterOf(it) == "Sides" }.map { it.slug }.toSet() }
@@ -101,6 +121,7 @@ fun MealPlanScreen(container: AppContainer, onOpenRecipe: (String) -> Unit, onCo
 
     var editing by remember { mutableStateOf<MealGroup?>(null) }
     var editingToToday by remember { mutableStateOf(false) }
+    var addingSideTo by remember { mutableStateOf<MealGroup?>(null) }
     var confirmRemove by remember { mutableStateOf<MealGroup?>(null) }
     var swapping by rememberSaveable { mutableStateOf<String?>(null) }
     var adding by rememberSaveable { mutableStateOf<String?>(null) }
@@ -122,6 +143,22 @@ fun MealPlanScreen(container: AppContainer, onOpenRecipe: (String) -> Unit, onCo
                 },
                 onRemove = { editing = null; confirmRemove = meal },
                 onCancel = { editing = null },
+            )
+        }
+    }
+    addingSideTo?.let { meal ->
+        val date = runCatching { LocalDate.parse(meal.date) }.getOrDefault(today)
+        ModalBottomSheet(onDismissRequest = { addingSideTo = null }, sheetState = sheetState) {
+            AddSideToMealContent(
+                mealTitle = mealTitle(meal),
+                recipes = recipes,
+                existingSlugs = meal.slugs.toSet(),
+                onAdd = { slugs ->
+                    addingSideTo = null
+                    val picked = slugs.mapNotNull { s -> recipes.firstOrNull { it.slug == s } }
+                    edit { repo.addToPlan(date, meal.entryType, picked) }
+                },
+                onCancel = { addingSideTo = null },
             )
         }
     }
@@ -173,6 +210,8 @@ fun MealPlanScreen(container: AppContainer, onOpenRecipe: (String) -> Unit, onCo
         actions = { SyncAction(container) }, onCookMeal = onCookMeal, sideSlugs = sideSlugs,
         recipeMinutes = recipeMinutes,
         onEditMeal = { editingToToday = false; editing = it },
+        onAddSide = { addingSideTo = it },
+        onRemoveMeal = { confirmRemove = it },
         onMakeToday = { meal, slotTaken ->
             // Today's slot already has a meal: let him pick another meal or day instead of merging them.
             if (slotTaken) {
@@ -206,8 +245,12 @@ fun MealPlanContent(
     sideSlugs: Set<String> = emptySet(),
     /** Total cook minutes per recipe slug, for showing a meal's lead time on the card. */
     recipeMinutes: Map<String, Long> = emptyMap(),
-    /** Move or remove a whole meal (long-press or the ⋮ button). */
+    /** Move or remove a whole meal (long-press or the ⋮ menu). */
     onEditMeal: ((MealGroup) -> Unit)? = null,
+    /** Add a side or extra dish directly to this meal so it joins "Cook this meal together". */
+    onAddSide: ((MealGroup) -> Unit)? = null,
+    /** Remove a whole meal directly from the ⋮ menu. */
+    onRemoveMeal: ((MealGroup) -> Unit)? = null,
     onSwapDay: ((LocalDate) -> Unit)? = null,
     onAddToDay: ((LocalDate) -> Unit)? = null,
     /** Move a meal from an earlier day to today; true when today already has that meal. */
@@ -254,6 +297,7 @@ fun MealPlanContent(
                             serverUrl = serverUrl,
                             onOpenRecipe = onOpenRecipe,
                             onEdit = onEditMeal?.let { edit -> { edit(ordered) } },
+                            onRemove = onRemoveMeal?.let { remove -> { remove(ordered) } },
                             onCook = null,
                             onMakeToday = onMakeToday?.let { make -> { make(ordered, meal.entryType in todayTypes) } },
                         )
@@ -272,6 +316,7 @@ fun MealPlanContent(
             }
             byDay.forEach { (date, meals) ->
                 val day = runCatching { LocalDate.parse(date) }.getOrNull()
+                val isToday = day == today
                 item(key = "d-$date") {
                     DayHeader(
                         date, today,
@@ -292,10 +337,13 @@ fun MealPlanContent(
                             serverUrl = serverUrl,
                             onOpenRecipe = onOpenRecipe,
                             onEdit = onEditMeal?.let { edit -> { edit(ordered) } },
+                            onAddSide = onAddSide?.let { add -> { add(ordered) } },
+                            onRemove = onRemoveMeal?.let { remove -> { remove(ordered) } },
                             onCook = if (ordered.cookable) ({
                                 onCookMeal(MealRequest(mealTitle(ordered), ordered.slugs, day ?: today, meal.entryType))
                             }) else null,
                             leadMinutes = leadMinutes,
+                            isToday = isToday,
                         )
                     }
                 }
@@ -314,19 +362,30 @@ private fun MealCard(
     onOpenRecipe: (String) -> Unit,
     onEdit: (() -> Unit)?,
     onCook: (() -> Unit)?,
+    onAddSide: (() -> Unit)? = null,
+    onRemove: (() -> Unit)? = null,
     onMakeToday: (() -> Unit)? = null,
     leadMinutes: Long? = null,
+    isToday: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
     val leadText = leadMinutes?.let { app.yeschef.data.cook.formatShort(it * 60) }
-    Surface(shape = MaterialTheme.shapes.large, color = colors.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = if (isToday) colors.surfaceContainer else colors.surfaceContainerLow,
+        border = if (isToday) BorderStroke(1.dp, colors.primary.copy(alpha = 0.30f)) else null,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
         Column(Modifier.padding(bottom = if (sides.isEmpty() && onCook == null && onMakeToday == null) 0.dp else 10.dp)) {
             mains.forEachIndexed { i, entry ->
                 MealRow(
                     entry, serverUrl, onOpenRecipe, imageSize = 64,
                     label = if (i == 0) type else null,
                     leadText = if (i == 0) leadText else null,
-                    onLongClick = onEdit, onMore = if (i == 0) onEdit else null,
+                    onLongClick = onEdit,
+                    onMore = if (i == 0) onEdit else null,
+                    onAddSide = if (i == 0) onAddSide else null,
+                    onRemove = if (i == 0) onRemove else null,
                 )
             }
             if (sides.isNotEmpty()) {
@@ -374,11 +433,15 @@ private fun MealRow(
     compact: Boolean = false,
     onLongClick: (() -> Unit)? = null,
     onMore: (() -> Unit)? = null,
+    onAddSide: (() -> Unit)? = null,
+    onRemove: (() -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     val title = entry.recipeName ?: entry.title?.takeIf { it.isNotBlank() } ?: "Untitled"
     val slug = entry.recipeSlug
     var expandNote by remember(entry.id) { mutableStateOf(false) }
+    var menuOpen by remember(entry.id) { mutableStateOf(false) }
+    val hasMenu = onAddSide != null || onRemove != null
     Row(
         Modifier.fillMaxWidth()
             .combinedClickable(onLongClick = onLongClick) { slug?.let(onOpenRecipe) }
@@ -418,7 +481,36 @@ private fun MealRow(
                 )
             }
         }
-        if (onMore != null) {
+        if (hasMenu) {
+            Box {
+                IconButton(onClick = { menuOpen = true }) {
+                    Icon(Icons.Filled.MoreVert, "Meal options", tint = colors.outline)
+                }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    if (onAddSide != null) {
+                        DropdownMenuItem(
+                            text = { Text("Add a side") },
+                            leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                            onClick = { menuOpen = false; onAddSide() },
+                        )
+                    }
+                    if (onMore != null) {
+                        DropdownMenuItem(
+                            text = { Text("Move meal") },
+                            leadingIcon = { Icon(Icons.Filled.CalendarMonth, contentDescription = null) },
+                            onClick = { menuOpen = false; onMore() },
+                        )
+                    }
+                    if (onRemove != null) {
+                        DropdownMenuItem(
+                            text = { Text("Remove from plan", color = colors.error) },
+                            leadingIcon = { Icon(Icons.Filled.DeleteOutline, contentDescription = null, tint = colors.error) },
+                            onClick = { menuOpen = false; onRemove() },
+                        )
+                    }
+                }
+            }
+        } else if (onMore != null) {
             IconButton(onClick = onMore) { Icon(Icons.Filled.MoreVert, "Move or remove", tint = colors.outline) }
         } else if (slug != null) {
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = colors.outline)

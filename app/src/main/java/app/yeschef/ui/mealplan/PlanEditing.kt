@@ -23,6 +23,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -31,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import app.yeschef.data.local.RecipeEntity
 import app.yeschef.ui.SectionLabel
 import app.yeschef.ui.recipes.RecipePickerContent
+import app.yeschef.ui.recipes.sideChapters
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
@@ -194,5 +196,28 @@ fun AddToPlanContent(
             MealTypeChips(type) { type = it }
             Spacer(Modifier.size(12.dp))
         },
+    )
+}
+
+/** Add a side or extra dish directly to an existing meal so it joins "Cook this meal together". */
+@Composable
+fun AddSideToMealContent(
+    mealTitle: String,
+    recipes: List<RecipeEntity>,
+    existingSlugs: Set<String>,
+    onAdd: (List<String>) -> Unit,
+    onCancel: () -> Unit,
+    initialPicked: List<String> = emptyList(),
+) {
+    val available = remember(recipes, existingSlugs) { recipes.filter { it.slug !in existingSlugs } }
+    RecipePickerContent(
+        recipes = available,
+        title = "Add a side",
+        subtitle = "Joins $mealTitle so you can cook everything together on one timeline.",
+        priorityChapters = sideChapters,
+        actionLabel = { n -> if (n <= 1) "Add to meal" else "Add $n to meal" },
+        onCancel = onCancel,
+        onConfirm = onAdd,
+        initialPicked = initialPicked,
     )
 }
