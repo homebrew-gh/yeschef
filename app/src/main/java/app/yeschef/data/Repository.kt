@@ -210,40 +210,60 @@ class Repository(
     }
 
     /**
-     * Runs Mealie's parser over the new and changed lines. Foods and units it doesn't
-     * know yet are created, as Mealie's own parse page does. If the parser fails, the
-     * lines are saved as plain text.
+     * Runs Mealie's parser over the new and changed lines (using AI when enabled),
+     * validating fuzzy food matches via [FoodMatch.ownFoodText] and resolving against
+     * Mealie's full foods/units catalog (including aliases and plurals).
      */
     private suspend fun parseLines(api: MealieApi, change: RecipeChange): Map<Int, JsonObject> {
         val lines = change.ingredients ?: return emptyMap()
         val todo = change.linesToParse()
         if (todo.isEmpty()) return emptyMap()
-        val results = try {
-            api.parseIngredients(ParseIngredientsBody(todo.map { lines[it].text }))
-        } catch (e: HttpException) {
-            if (e.code() == 401) throw e
-            emptyList()
-        }
+        val ai = runCatching { AiStatus.from(api.groupSelf()).enabled }.getOrDefault(false)
+        val results = parseTexts(api, todo.map { lines[it].text }, ai)
         val foods = Lookup({ api.foods().items }, { api.createFood(it) })
         val units = Lookup({ api.units().items }, { api.createUnit(it) })
         return todo.mapIndexed { n, index ->
+            val text = lines[index].text
             val ing = results.getOrNull(n)?.get("ingredient") as? JsonObject
-            val food = ing?.get("food")?.let { if (it.needsId()) foods.resolve(it as JsonObject) else it }
-            val unit = ing?.get("unit")?.let { if (it.needsId()) units.resolve(it as JsonObject) else it }
-            index to parsedIngredient(ing, lines[index].text, food, unit)
+            val note = ing?.string("note")
+            val unitObj = ing?.get("unit") as? JsonObject
+            val unit = unitObj?.let { if (it.needsId()) units.resolve(it) else it }
+            val food = resolveValidatedFood(text, ing?.get("food") as? JsonObject, note, unitObj, foods)
+            index to parsedIngredient(ing, text, food, unit)
         }.toMap()
     }
 
-    /** Finds a food or unit by name (or plural/abbreviation), creating it once if Mealie has none. */
+    /** Resolves a parsed food against Mealie's catalog, rejecting bad fuzzy matches via [FoodMatch.ownFoodText]. */
+    private suspend fun resolveValidatedFood(
+        text: String,
+        parsedFood: JsonObject?,
+        note: String?,
+        unit: JsonObject?,
+        foods: Lookup,
+    ): JsonObject? {
+        if (parsedFood == null) return null
+        var food = when {
+            parsedFood.string("id") != null -> foods.byId(parsedFood.string("id")!!) ?: parsedFood
+            parsedFood.needsId() -> foods.resolve(parsedFood)
+            else -> return null
+        }
+        val own = FoodMatch.ownFoodText(text, food, note, unit)
+        if (own != null) {
+            food = foods.resolve(JsonObject(mapOf("name" to JsonPrimitive(own))))
+        }
+        return food
+    }
+
+    /** Finds a food or unit by normalized name, plural, abbreviation, or alias, creating it once if Mealie has none. */
     private class Lookup(val all: suspend () -> List<JsonObject>, val create: suspend (JsonObject) -> JsonObject) {
         private var known: MutableList<JsonObject>? = null
+        private suspend fun list(): MutableList<JsonObject> = known ?: all().toMutableList().also { known = it }
+        suspend fun byId(id: String): JsonObject? = list().firstOrNull { it.string("id") == id }
         suspend fun resolve(o: JsonObject): JsonObject {
             val name = o.string("name")!!.trim()
-            val list = known ?: all().toMutableList().also { known = it }
-            list.firstOrNull { k ->
-                listOf("name", "pluralName", "abbreviation", "pluralAbbreviation").any { k.string(it)?.equals(name, ignoreCase = true) == true }
-            }?.let { return it }
-            return create(JsonObject(mapOf("name" to JsonPrimitive(name)))).also { list += it }
+            val items = list()
+            FoodMatch.findMatchingFood(name, items)?.let { return it }
+            return create(JsonObject(mapOf("name" to JsonPrimitive(name)))).also { items += it }
         }
     }
 
@@ -504,19 +524,31 @@ class Repository(
             val raw = api.recipeRaw(slug)
             val lines = (raw["recipeIngredient"] as? JsonArray).orEmpty().filterIsInstance<JsonObject>()
             val todo = lines.withIndex().mapNotNull { (i, line) -> AutoOrganize.lineText(line)?.let { i to it } }
-            val results = parseTexts(api, todo.map { it.second }, ai)
+            // Split combined lines ("salt and pepper, to taste") before parsing, matching the MCP.
+            val pieces = FoodMatch.splitLines(todo.map { it.second })
+            val results = parseTexts(api, pieces.map { it.text }, ai)
             val foods = Lookup({ api.foods().items }, { api.createFood(it) })
             val units = Lookup({ api.units().items }, { api.createUnit(it) })
-            val newLines = lines.toMutableList()
+            val replacements = mutableMapOf<Int, MutableList<JsonObject>>()
             var linked = false
-            todo.forEachIndexed { n, (index, text) ->
-                val ing = results.getOrNull(n)?.get("ingredient") as? JsonObject ?: return@forEachIndexed
-                val parsedFood = (ing["food"] as? JsonObject)?.takeIf { it.string("id") != null || it.needsId() } ?: return@forEachIndexed
-                val food = if (parsedFood.needsId()) foods.resolve(parsedFood) else parsedFood
-                val unit = ing["unit"]?.let { if (it.needsId()) units.resolve(it as JsonObject) else it }
-                newLines[index] = AutoOrganize.mergeLine(lines[index], parsedIngredient(ing, text, food, unit), text)
-                linked = true
+            pieces.forEachIndexed { k, piece ->
+                val (lineIndex, _) = todo[piece.fromIndex]
+                val ing = results.getOrNull(k)?.get("ingredient") as? JsonObject
+                val parsedFood = ing?.get("food") as? JsonObject
+                val unitObj = ing?.get("unit") as? JsonObject
+                val food = resolveValidatedFood(piece.text, parsedFood, ing?.string("note"), unitObj, foods)
+                val unit = unitObj?.let { if (it.needsId()) units.resolve(it) else it }
+                val bucket = replacements.getOrPut(lineIndex) { mutableListOf() }
+                if (food != null) {
+                    val base = if (bucket.isEmpty()) lines[lineIndex] else JsonObject(mapOf("referenceId" to JsonPrimitive(UUID.randomUUID().toString())))
+                    bucket += AutoOrganize.mergeLine(base, parsedIngredient(ing, piece.text, food, unit), piece.text)
+                    linked = true
+                } else if (bucket.isNotEmpty() || pieces.count { it.fromIndex == piece.fromIndex } > 1) {
+                    bucket += JsonObject(mapOf("note" to JsonPrimitive(piece.text), "originalText" to JsonPrimitive(piece.text)))
+                    linked = true
+                }
             }
+            val newLines = lines.flatMapIndexed { i, orig -> replacements[i]?.takeIf { it.isNotEmpty() } ?: listOf(orig) }
 
             val site = url?.let { u ->
                 runCatching { AutoOrganize.siteWords(api.testScrapeUrl(JsonObject(mapOf("url" to JsonPrimitive(u))))) }.getOrNull()
@@ -592,14 +624,24 @@ class Repository(
             .filter(AutoOrganize::needsAisle)
         if (items.isEmpty()) return AisleResult(0, 0, 0)
         val results = parseTexts(api, items.map { AutoOrganize.itemText(it)!! }, ai)
-        val foods = api.foods().items.associateBy { it.string("id") }
+        val foodList = api.foods().items
+        val foods = foodList.associateBy { it.string("id") }
         var sorted = 0
         var noAisle = 0
         items.forEachIndexed { n, item ->
-            val ing = results.getOrNull(n)?.get("ingredient") as? JsonObject ?: return@forEachIndexed
-            val foodId = (ing["food"] as? JsonObject)?.string("id") ?: return@forEachIndexed
-            val food = foods[foodId] ?: (ing["food"] as JsonObject)
-            val updated = AutoOrganize.linkedItem(item, ing, food)
+            val text = AutoOrganize.itemText(item)!!
+            val ing = results.getOrNull(n)?.get("ingredient") as? JsonObject
+            val note = ing?.string("note")
+            val unit = ing?.get("unit") as? JsonObject
+            val candidate = (ing?.get("food") as? JsonObject)?.string("id")?.let { foods[it] ?: (ing["food"] as JsonObject) }
+            val food = when {
+                candidate != null && FoodMatch.isGoodFoodMatch(text, candidate, note, unit) -> candidate
+                else -> {
+                    val core = FoodMatch.extractCoreFood(text, note, unit) ?: text
+                    FoodMatch.findMatchingFood(core, foodList)
+                }
+            } ?: return@forEachIndexed
+            val updated = AutoOrganize.linkedItem(item, ing ?: JsonObject(emptyMap()), food)
             api.updateShoppingItem(item.string("id")!!, updated)
             if (updated.string("labelId") != null) sorted++ else noAisle++
         }

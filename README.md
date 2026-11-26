@@ -63,8 +63,8 @@ your own Mealie server.
   **From a photo** appears: snap a cookbook page or recipe card (or pick up to 4 photos) and the AI
   writes it up. The photo option needs an image provider in Mealie's AI settings. Imports need the
   server, so they don't work offline.
-  After an import, YesChef runs Mealie's ingredient parser over the new recipe (the AI parser when
-  Mealie has AI) and links each line to a food, so the ingredients land in their aisles on a
+  After an import, YesChef splits combined lines ("salt and pepper, to taste"), runs Mealie's ingredient parser over the new recipe (the AI parser when
+  Mealie has AI), validates fuzzy matches against Mealie's food names, plurals and aliases (so "peanut butter" doesn't link to "butter"), and links each line to a food so the ingredients land in their aisles on a
   shopping list. Foods Mealie didn't have yet are created without an aisle; give them a label in
   Mealie, or let an assistant do it. It also picks a chapter from the page's own course (Main
   Course, Side Dish, Cocktails...) or a name that says it (soup, salad), and tags from the foods
