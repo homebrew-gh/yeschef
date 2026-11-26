@@ -27,31 +27,33 @@ class MealTimelineTest {
         assertEquals(0L, parseRecipeTime("PT0M"))
     }
 
-    @Test fun noCookRecipeIsJustItsPrep() {
+    @Test fun noCookRecipeGoesIntoUntimedPrep() {
         val sauce = MealRecipeIn("Yogurt-dill sauce", "5 minutes", "0 minutes", null, steps("Mix everything.", "Chill."))
         val t = buildMealTimeline(listOf(sauce))
         assertTrue(t.recipes[0].timesKnown)
-        assertEquals(300L, t.recipes[0].totalSeconds)
-        assertEquals(300L, t.steps[0].startsBefore)
+        assertEquals(0L, t.recipes[0].totalSeconds)
+        assertEquals(300L, t.recipes[0].prepSeconds)
+        assertTrue(t.steps.isEmpty())
+        assertEquals(listOf(0 to 0, 0 to 1), t.prepSteps.map { it.recipeIndex to it.stepIndex })
     }
 
     private fun steps(vararg text: String) = text.map { MealStepIn(it) }
 
-    @Test fun recipesFinishTogether() {
+    @Test fun recipesSeparatePrepAndFinishTimedCookingTogether() {
         val roast = MealRecipeIn("Roast chicken", "15 minutes", "1 hour 15 minutes", null,
-            steps("Season the chicken.", "Roast for 75 minutes.", "Rest, then carve."))
+            steps("Season the chicken.", "Roast at 400°F for 75 minutes.", "Rest, then carve."))
         val beans = MealRecipeIn("Green beans", "5 minutes", "10 minutes", null,
             steps("Trim the beans.", "Sauté for 10 minutes."))
         val t = buildMealTimeline(listOf(roast, beans))
 
-        assertEquals(5400L, t.recipes[0].startsBefore)
-        assertEquals(900L, t.recipes[1].startsBefore)
-        assertEquals(5400L, t.leadSeconds)
-        // Chicken starts first; the beans slot in near the end.
-        assertEquals(0 to 0, t.steps.first().let { it.recipeIndex to it.stepIndex })
+        // Leading untimed steps move into untimed Prep & Setup.
+        assertEquals(listOf(0 to 0, 1 to 0), t.prepSteps.map { it.recipeIndex to it.stepIndex })
+        // Roast phase: 75 min roast + 5 min generous carve cushion = 80 min; beans: 10 min sauté.
+        assertEquals(80 * 60L, t.recipes[0].startsBefore)
+        assertEquals(10 * 60L, t.recipes[1].startsBefore)
+        assertEquals(80 * 60L, t.leadSeconds)
         val order = t.steps.map { it.recipeIndex to it.stepIndex }
-        assertEquals(listOf(0 to 0, 0 to 1, 1 to 0, 1 to 1, 0 to 2), order)
-        // The 75 minute roast keeps its time: it starts 90 min out and the rest begins 15 min out.
+        assertEquals(listOf(0 to 1, 1 to 1, 0 to 2), order)
         val roastStep = t.steps.first { it.recipeIndex == 0 && it.stepIndex == 1 }
         val restStep = t.steps.first { it.recipeIndex == 0 && it.stepIndex == 2 }
         assertEquals(75 * 60L, roastStep.startsBefore - restStep.startsBefore)
@@ -62,16 +64,48 @@ class MealTimelineTest {
         val rice = MealRecipeIn("Rice", null, null, null, steps("Rinse.", "Simmer 18 minutes."))
         val t = buildMealTimeline(listOf(salad, rice))
         assertFalse(t.recipes[0].timesKnown)
-        assertEquals(15 * 60L, t.recipes[0].totalSeconds)
-        assertEquals(23 * 60L, t.recipes[1].totalSeconds)
+        assertEquals(0L, t.recipes[0].totalSeconds)
+        assertEquals(15 * 60L, t.recipes[0].prepSeconds)
+        assertEquals(18 * 60L, t.recipes[1].totalSeconds)
     }
 
-    @Test fun squeezesStepsThatOverrunTheStatedTime() {
-        val r = MealRecipeIn("Quick", null, null, "20 minutes", steps("Boil 15 minutes.", "Bake 15 minutes."))
+    @Test fun neverSqueezesExplicitStepTimersAndSumsMultiDurationSteps() {
+        val r = MealRecipeIn(
+            "Lasagna",
+            null,
+            null,
+            "20 minutes",
+            steps("Boil 15 minutes.", "Bake covered 25 minutes, then uncovered for 20 minutes. Rest 15 minutes."),
+        )
         val t = buildMealTimeline(listOf(r))
         assertTrue(t.recipes[0].timesKnown)
-        assertEquals(1200L, t.steps[0].startsBefore)
-        assertEquals(600L, t.steps[1].startsBefore)
+        // 15 min + (25 + 20 + 15 = 60 min) = 75 min — never shrunk down to the understated 20 min total.
+        assertEquals(75 * 60L, t.recipes[0].totalSeconds)
+        assertEquals(75 * 60L, t.steps[0].startsBefore)
+        assertEquals(60 * 60L, t.steps[1].startsBefore)
+    }
+
+    @Test fun detectsOvenTemperaturesConflictsAndBoilWaterCues() {
+        val chicken = MealRecipeIn("Roast chicken", null, "40 minutes", null, steps("Roast at 375°F for 40 minutes."))
+        val potatoes = MealRecipeIn(
+            "Smashed potatoes",
+            null,
+            "45 minutes",
+            null,
+            steps("Boil the baby potatoes in salted water for 20 minutes.", "Roast at 450°F for 25 minutes."),
+        )
+        val conflict = buildMealTimeline(listOf(chicken, potatoes))
+        assertEquals(listOf("375°F", "450°F"), conflict.ovenRequirements.map { it.tempLabel })
+        assertTrue(conflict.hasOvenConflict)
+        assertEquals(listOf("Smashed potatoes"), conflict.boilWaterDishes)
+
+        val sameOven = buildMealTimeline(
+            listOf(
+                MealRecipeIn("A", null, "20 min", null, steps("Bake at 400°F for 20 minutes.")),
+                MealRecipeIn("B", null, "15 min", null, steps("Roast at 400°F for 15 minutes.")),
+            ),
+        )
+        assertFalse(sameOven.hasOvenConflict)
     }
 
     @Test fun remindsAfterLongQuietStretches() {
@@ -82,9 +116,9 @@ class MealTimelineTest {
         val ready = 100_000_000L
         val start = ready - t.leadSeconds * 1000
         val r = planReminders(t, listOf(pork, rice), ready, now = start - 1, clock = { "T" + (ready - it) / 60_000 })
-        // Pork start, then after 8 quiet hours the rice, then shredding.
-        assertEquals(listOf("T495 · Start Pulled pork", "T25 · Start Rice"), r.take(2).map { it.title })
-        assertEquals("Start Rice: Rinse the rice", r[1].lines.single())
+        // Pork timed start (8 hr + 5 min shred = 485 min), then after 8 quiet hours the rice (25 min), then shredding.
+        assertEquals(listOf("T485 · Start Pulled pork", "T25 · Start Rice"), r.take(2).map { it.title })
+        assertEquals("Start Rice: Simmer for 20 minutes", r[1].lines.single())
         assertTrue(r.any { it.lines.any { l -> l.startsWith("Pulled pork, step 3") } })
         // Nothing for steps already past.
         assertEquals(r.size - 1, planReminders(t, listOf(pork, rice), ready, now = start + 1, clock = { "" }).size)
@@ -107,9 +141,9 @@ class MealTimelineTest {
         val roast = MealRecipeIn("Roast chicken", "10 minutes", "30 minutes", null,
             steps("Season the chicken.", "Roast at 400°F for 25 minutes.", "Whisk constantly for 6 minutes to make gravy."))
         val t = buildMealTimeline(listOf(roast))
-        assertFalse(t.steps[0].passive)
-        assertTrue(t.steps[1].passive)
-        assertFalse(t.steps[2].passive)
+        assertEquals(1, t.prepSteps.size)
+        assertTrue(t.steps[0].passive)
+        assertFalse(t.steps[1].passive)
     }
 
     private fun e(id: Int, date: String, type: String, slug: String?) =
