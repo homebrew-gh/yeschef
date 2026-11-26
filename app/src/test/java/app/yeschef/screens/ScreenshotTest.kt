@@ -238,6 +238,41 @@ class ScreenshotTest {
         }
     }
 
+    /** Range timer ringing at its lower bound + running range timer with an upcoming foil checkpoint. */
+    @Test fun timerTrayRangeAndCheckpoint() {
+        paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_6.copy(screenHeight = 1400))
+        paparazzi.snapshot {
+            YesChefTheme {
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.BottomCenter) {
+                    TimerTrayContent(
+                        list = listOf(
+                            CookTimer(
+                                id = 10,
+                                label = "Step 4 · Bake the lasagna",
+                                durationMs = 40 * 60_000L,
+                                endAt = null,
+                                done = true,
+                                recipeName = "Classic lasagna",
+                                maxDurationMs = 48 * 60_000L,
+                            ),
+                            CookTimer(
+                                id = 11,
+                                label = "Step 3 · Bake banana bread",
+                                durationMs = 40 * 60_000L,
+                                endAt = Sample.NOW + 32 * 60_000L,
+                                recipeName = "Banana bread",
+                                maxDurationMs = 48 * 60_000L,
+                                checkpointLabel = "Cover with foil",
+                                checkpointAt = Sample.NOW + 17 * 60_000L,
+                            ),
+                        ),
+                        now = Sample.NOW,
+                    )
+                }
+            }
+        }
+    }
+
     @Test fun mealPlan() {
         paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_6.copy(screenHeight = 3000))
         phone(tab = 2) {

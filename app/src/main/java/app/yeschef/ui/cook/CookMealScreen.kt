@@ -109,6 +109,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.yeschef.AppContainer
 import app.yeschef.data.cook.CookTimer
+import app.yeschef.data.cook.DetectedDuration
 import app.yeschef.data.cook.MealPrepStep
 import app.yeschef.data.cook.MealRecipeIn
 import app.yeschef.data.cook.MealSession
@@ -121,6 +122,7 @@ import app.yeschef.data.cook.firstSteps
 import app.yeschef.data.cook.formatAmount
 import app.yeschef.data.cook.formatClock
 import app.yeschef.data.cook.formatShort
+import app.yeschef.data.cook.formatTimerChip
 import app.yeschef.data.cook.planReminders
 import app.yeschef.data.cook.scaleIngredient
 import app.yeschef.data.cook.timerStepLabel
@@ -485,7 +487,7 @@ fun CookMealScreen(container: AppContainer, request: MealRequest, onClose: () ->
             }
         },
         onBack = onClose,
-        onStartTimer = { recipe, label, seconds -> startTimer(label, seconds, recipe.slug, recipe.name) },
+        onStartTimer = { recipe, label, duration -> startTimer(label, duration, recipe.slug, recipe.name) },
         onKitchenTools = { kitchenTools.open = true },
         scales = scales,
         onScaleChange = { slug, s -> scales = scales + (slug to s) },
@@ -539,7 +541,7 @@ fun CookMealContent(
     onStart: () -> Unit,
     onFinish: () -> Unit,
     onBack: () -> Unit,
-    onStartTimer: (MealRecipeView, String, Long) -> Unit,
+    onStartTimer: (MealRecipeView, String, DetectedDuration) -> Unit,
     onKitchenTools: (() -> Unit)? = null,
     zone: ZoneId = ZoneId.systemDefault(),
     openDishes: Set<String> = emptySet(),
@@ -1272,7 +1274,7 @@ private fun StepCard(
     onToggle: (Int) -> Unit,
     activeTimers: List<CookTimer>,
     now: Long,
-    onStartTimer: (MealRecipeView, String, Long) -> Unit,
+    onStartTimer: (MealRecipeView, String, DetectedDuration) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     val detail = recipe.detail ?: return
@@ -1340,13 +1342,13 @@ private fun StepCard(
                             val label = timerStepLabel(stepIndex + 1, step.summary?.takeIf { it.isNotBlank() } ?: step.title, step.text, d.text)
                             val running = activeTimers.firstOrNull { it.recipeSlug == recipe.slug && it.label == label }
                             val chipText = when {
-                                running == null -> formatShort(d.seconds)
-                                running.done -> "Time's up!"
+                                running == null -> formatTimerChip(d)
+                                running.done -> if (running.remainingRangeMs >= 120_000L) "Check now!" else "Time's up!"
                                 running.running -> formatClock((running.remainingMs(now) + 999) / 1000)
                                 else -> "Paused · ${formatClock(running.pausedRemainingMs / 1000)}"
                             }
                             TimerChip(chipText) {
-                                if (running == null) onStartTimer(recipe, label, d.seconds)
+                                if (running == null) onStartTimer(recipe, label, d)
                             }
                         }
                     }

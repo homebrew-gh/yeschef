@@ -131,6 +131,7 @@ import app.yeschef.AppContainer
 import app.yeschef.data.cook.DetectedDuration
 import app.yeschef.data.cook.detectDurations
 import app.yeschef.data.cook.formatShort
+import app.yeschef.data.cook.formatTimerChip
 import app.yeschef.data.cook.IngredientLine
 import app.yeschef.data.cook.StepLine
 import app.yeschef.data.cook.firstSteps
@@ -564,7 +565,7 @@ fun RecipeDetailScreen(
         // In cook mode, back leaves cook mode and stays on the recipe.
         onBack = if (cookMode) ({ leaveCookMode() }) else onBack,
         onCustomTimer = { showCustomTimer = true },
-        onStartTimer = { label, seconds -> startTimer(label, seconds, slug, recipeName) },
+        onStartTimer = { label, duration -> startTimer(label, duration, slug, recipeName) },
         onKitchenTools = { kitchenTools.open = true },
         photoUploading = uploading,
         onTakePhoto = {
@@ -617,7 +618,7 @@ fun RecipeDetailContent(
     onServingsChanged: ((servings: Double?, factor: Double) -> Unit)? = null,
     onStepInViewChanged: ((Int) -> Unit)? = null,
     onCustomTimer: () -> Unit,
-    onStartTimer: (label: String, seconds: Long) -> Unit,
+    onStartTimer: (label: String, duration: DetectedDuration) -> Unit,
     onKitchenTools: (() -> Unit)? = null,
     photoUploading: Boolean = false,
     onTakePhoto: (() -> Unit)? = null,
@@ -1146,7 +1147,7 @@ private fun StepItem(
     scale: Double,
     checkedIngredients: Set<Int>,
     onToggleIngredient: (Int) -> Unit,
-    onStartTimer: (label: String, seconds: Long) -> Unit,
+    onStartTimer: (label: String, duration: DetectedDuration) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
@@ -1183,8 +1184,8 @@ private fun StepItem(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         found.forEach { d ->
-                            TimerChip(formatShort(d.seconds)) {
-                                onStartTimer(timerStepLabel(index + 1, step.summary?.takeIf { it.isNotBlank() } ?: step.title, step.text, d.text), d.seconds)
+                            TimerChip(formatTimerChip(d)) {
+                                onStartTimer(timerStepLabel(index + 1, step.summary?.takeIf { it.isNotBlank() } ?: step.title, step.text, d.text), d)
                             }
                         }
                     }
