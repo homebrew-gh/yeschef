@@ -1,7 +1,9 @@
 package app.yeschef.ui.shopping
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -92,6 +94,7 @@ import app.yeschef.data.assignRecipeColors
 import app.yeschef.data.groupForShopping
 import app.yeschef.data.mergeLabelOrders
 import app.yeschef.data.parseRecipeIds
+import app.yeschef.data.remote.LabelDto
 import app.yeschef.data.remote.MealieJson
 import app.yeschef.data.sync.SyncScheduler
 import app.yeschef.ui.SyncAction
@@ -147,6 +150,36 @@ fun ShoppingScreen(container: AppContainer) {
         }
     }
     var sorting by remember { mutableStateOf(false) }
+    var movingItem by remember { mutableStateOf<ShoppingRow?>(null) }
+    var availableLabels by remember { mutableStateOf<List<LabelDto>?>(null) }
+    var labelsError by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(movingItem?.id) {
+        if (movingItem != null) {
+            availableLabels = null
+            labelsError = null
+            runCatching { repo.storeSections() }
+                .onSuccess { availableLabels = it }
+                .onFailure {
+                    labelsError = if (it is java.io.IOException) "Connect the VPN to load store sections." else (it.message ?: "Couldn't load store sections.")
+                }
+        }
+    }
+    movingItem?.let { item ->
+        AssignAisleDialog(
+            itemText = item.text,
+            currentLabelId = item.labelId,
+            labels = availableLabels,
+            error = labelsError,
+            onDismiss = { movingItem = null },
+            onPick = { label, rememberForFood ->
+                movingItem = null
+                listAction("Couldn't move item") {
+                    repo.assignItemAisle(item.id, label, rememberForFood)
+                    snackbar.showSnackbar("Moved to ${label.name}")
+                }
+            },
+        )
+    }
     fun queued(block: suspend () -> Unit) {
         scope.launch {
             block()
@@ -204,6 +237,7 @@ fun ShoppingScreen(container: AppContainer) {
         refreshing = syncState == SyncState.Syncing,
         onRefresh = { scope.launch { repo.sync() } },
         onToggle = { row -> queued { repo.setChecked(row.id, !row.checked) } },
+        onLongClickItem = { row -> if (!row.pending) movingItem = row },
         onAdd = { text ->
             val target = if (inDay) addToId else selected?.id
             target?.let { queued { repo.addItem(it, text) } }
@@ -266,6 +300,7 @@ fun ShoppingContent(
     refreshing: Boolean,
     onRefresh: () -> Unit,
     onToggle: (ShoppingRow) -> Unit,
+    onLongClickItem: ((ShoppingRow) -> Unit)? = null,
     onAdd: (String) -> Unit,
     actions: @Composable () -> Unit,
     onClearChecked: () -> Unit = {},
@@ -378,7 +413,7 @@ fun ShoppingContent(
                         }
                     }
                     sections.forEach { section ->
-                        item(key = "s-" + section.labelName) { SectionCard(section, recipeNames, recipeColor, onToggle) }
+                        item(key = "s-" + section.labelName) { SectionCard(section, recipeNames, recipeColor, onToggle, onLongClickItem) }
                     }
                     if (checked.isNotEmpty()) {
                         item(key = "checked") {
@@ -599,6 +634,67 @@ private fun ConfirmDialog(heading: String, body: String, confirm: String, onDism
     )
 }
 
+/** Long-press a shopping item to move it into one of Mealie's store sections. */
+@Composable
+private fun AssignAisleDialog(
+    itemText: String,
+    currentLabelId: String?,
+    labels: List<LabelDto>?,
+    error: String?,
+    onDismiss: () -> Unit,
+    onPick: (LabelDto, rememberForFood: Boolean) -> Unit,
+) {
+    var rememberForFood by rememberSaveable { mutableStateOf(true) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Move to aisle") },
+        text = {
+            Column(Modifier.heightIn(max = 360.dp)) {
+                Text(itemText, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(10.dp))
+                when {
+                    error != null -> Text(error, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                    labels == null -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Text("Loading store sections…", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    labels.isEmpty() -> Text("No store sections set up in Mealie yet.", style = MaterialTheme.typography.bodyMedium)
+                    else -> {
+                        LazyColumn(Modifier.weight(1f, fill = false)) {
+                            items(labels.size, key = { labels[it].id }) { i ->
+                                val l = labels[i]
+                                val selected = l.id == currentLabelId
+                                Row(
+                                    Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small)
+                                        .clickable { onPick(l, rememberForFood) }
+                                        .padding(horizontal = 8.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Box(Modifier.size(10.dp).background(parseColor(l.color) ?: MaterialTheme.colorScheme.tertiary, CircleShape))
+                                    Spacer(Modifier.width(12.dp))
+                                    Text(
+                                        l.name,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = if (selected) FontWeight.SemiBold else null,
+                                        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { rememberForFood = !rememberForFood }) {
+                            Checkbox(checked = rememberForFood, onCheckedChange = { rememberForFood = it })
+                            Text("Remember for future lists", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
+}
+
 @Composable
 private fun ProgressCard(done: Int, total: Int, onShoppingDay: (() -> Unit)? = null) {
     val colors = MaterialTheme.colorScheme
@@ -669,6 +765,7 @@ private fun SectionCard(
     recipeNames: Map<String, String>,
     recipeColor: (String) -> Color?,
     onToggle: (ShoppingRow) -> Unit,
+    onLongClick: ((ShoppingRow) -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
@@ -683,24 +780,27 @@ private fun SectionCard(
             Column {
                 section.rows.forEachIndexed { i, row ->
                     if (i > 0) HorizontalDivider(Modifier.padding(start = 56.dp), color = colors.outlineVariant.copy(alpha = 0.6f))
-                    ItemRow(row, recipeNames, recipeColor, onToggle)
+                    ItemRow(row, recipeNames, recipeColor, onToggle, onLongClick)
                 }
             }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ItemRow(
     row: ShoppingRow,
     recipeNames: Map<String, String>,
     recipeColor: (String) -> Color?,
     onToggle: (ShoppingRow) -> Unit,
+    onLongClick: ((ShoppingRow) -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     val tagColors = row.recipeIds.mapNotNull(recipeColor)
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 60.dp).clickable { onToggle(row) },
+        Modifier.fillMaxWidth().heightIn(min = 60.dp)
+            .combinedClickable(onLongClick = onLongClick?.let { cb -> { cb(row) } }) { onToggle(row) },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // Recipe colour stripe: one band per recipe the item came from.

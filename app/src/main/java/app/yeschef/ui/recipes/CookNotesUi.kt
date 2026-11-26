@@ -186,3 +186,85 @@ fun CookNotesReviewContent(
         }
     }
 }
+
+/**
+ * Review sheet for whole-meal cook mode: groups spoken notes by dish so you can fix
+ * speech-to-text slips before saving them to each recipe's timeline in Mealie.
+ */
+@Composable
+fun MealCookNotesReviewContent(
+    groups: List<Triple<String, String, List<CookNote>>>, // (recipeId, recipeName, notes)
+    clock: (Long) -> String,
+    markCooked: Boolean,
+    onMarkCooked: (Boolean) -> Unit,
+    onEdit: (recipeId: String, note: CookNote) -> Unit,
+    onDelete: (recipeId: String, note: CookNote) -> Unit,
+    onSave: () -> Unit,
+    onKeep: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.colorScheme
+    val nonEmpty = groups.filter { it.third.isNotEmpty() }
+    Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding()) {
+        Text(
+            "Cooking notes",
+            style = MaterialTheme.typography.headlineSmall,
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp),
+        )
+        Text(
+            "Saved to each recipe's timeline in Mealie.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.onSurfaceVariant,
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 12.dp),
+        )
+        nonEmpty.forEach { (recipeId, recipeName, notes) ->
+            Text(
+                recipeName,
+                style = MaterialTheme.typography.titleSmall,
+                color = colors.primary,
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 4.dp),
+            )
+            notes.sortedBy { it.at }.forEach { note ->
+                Surface(
+                    shape = MaterialTheme.shapes.large,
+                    color = colors.surfaceContainer,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth(),
+                ) {
+                    Row(Modifier.padding(start = 16.dp, top = 10.dp, bottom = 10.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            val where = note.step?.let { s -> "Step $s" + (note.stepLabel?.let { " · $it" } ?: "") }
+                            Text(
+                                listOfNotNull(clock(note.at), where).joinToString("  ·  "),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = colors.tertiary,
+                            )
+                            Spacer(Modifier.size(2.dp))
+                            Text(note.text, style = MaterialTheme.typography.bodyLarge)
+                        }
+                        IconButton(onClick = { onEdit(recipeId, note) }) { Icon(Icons.Filled.Edit, "Edit note") }
+                        IconButton(onClick = { onDelete(recipeId, note) }) { Icon(Icons.Filled.Delete, "Delete note") }
+                    }
+                }
+            }
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Checkbox(checked = markCooked, onCheckedChange = onMarkCooked)
+            Text("Also mark recipes as cooked today", style = MaterialTheme.typography.bodyLarge)
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextButton(onClick = onKeep) { Text("Keep for later") }
+            Spacer(Modifier.width(8.dp))
+            Button(
+                onClick = onSave,
+                enabled = nonEmpty.any { g -> g.third.any { it.text.isNotBlank() } },
+            ) { Text("Save to Mealie") }
+        }
+    }
+}

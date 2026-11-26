@@ -76,6 +76,17 @@ class MealReminders(private val context: Context) {
         s.reminders.filter { it.at > now }.forEach(::schedule)
     }
 
+    /** Nudges the running meal's ready time and reminders by [deltaMs] (e.g. ±5 min). */
+    fun shift(deltaMs: Long, now: Long = System.currentTimeMillis()) {
+        val current = _session.value ?: return
+        current.reminders.forEach { cancel(it.id) }
+        val updated = current.shifted(deltaMs)
+        save(updated)
+        if (updated.pausedAt == null) {
+            updated.reminders.filter { it.at > now }.forEach(::schedule)
+        }
+    }
+
     fun end() {
         _session.value?.reminders?.forEach { r ->
             cancel(r.id)

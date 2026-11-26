@@ -90,6 +90,28 @@ class MealTimelineTest {
         assertEquals(r.size - 1, planReminders(t, listOf(pork, rice), ready, now = start + 1, clock = { "" }).size)
     }
 
+    @Test fun remindsForDishAfterOwnQuietStretchEvenWhenSideStartsMidway() {
+        val roast = MealRecipeIn("Roast chicken", "5 minutes", "25 minutes", null,
+            steps("Season chicken.", "Roast for 25 minutes.", "Carve and serve."))
+        val side = MealRecipeIn("Green beans", null, null, "10 minutes",
+            steps("Sauté beans for 10 minutes."))
+        val t = buildMealTimeline(listOf(roast, side))
+        val ready = 100_000_000L
+        val start = ready - t.leadSeconds * 1000
+        val reminders = planReminders(t, listOf(roast, side), ready, now = start - 1, clock = { "T" + (ready - it) / 60_000 })
+        // Roast step 3 follows a 25-minute roast even though the side starts 10 min before ready.
+        assertTrue(reminders.any { it.lines.any { l -> l.startsWith("Roast chicken, step 3") } })
+    }
+
+    @Test fun classifiesPassiveVsActiveSteps() {
+        val roast = MealRecipeIn("Roast chicken", "10 minutes", "30 minutes", null,
+            steps("Season the chicken.", "Roast at 400°F for 25 minutes.", "Whisk constantly for 6 minutes to make gravy."))
+        val t = buildMealTimeline(listOf(roast))
+        assertFalse(t.steps[0].passive)
+        assertTrue(t.steps[1].passive)
+        assertFalse(t.steps[2].passive)
+    }
+
     private fun e(id: Int, date: String, type: String, slug: String?) =
         MealPlanEntity(id, date, type, null, null, slug?.let { "id-$it" }, slug, slug)
 

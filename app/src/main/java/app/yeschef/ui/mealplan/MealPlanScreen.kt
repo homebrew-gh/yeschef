@@ -85,6 +85,9 @@ fun MealPlanScreen(container: AppContainer, onOpenRecipe: (String) -> Unit, onCo
     val config by container.config.collectAsStateWithLifecycle()
     val recipes by remember { repo.recipes() }.collectAsStateWithLifecycle(emptyList())
     val sideSlugs = remember(recipes) { recipes.filter { Cookbook.chapterOf(it) == "Sides" }.map { it.slug }.toSet() }
+    val recipeMinutes = remember(recipes) {
+        recipes.mapNotNull { r -> Cookbook.minutes(r.totalTime)?.let { r.slug to it } }.toMap()
+    }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -168,6 +171,7 @@ fun MealPlanScreen(container: AppContainer, onOpenRecipe: (String) -> Unit, onCo
     MealPlanContent(
         entries, today, config?.serverUrl, onOpenRecipe,
         actions = { SyncAction(container) }, onCookMeal = onCookMeal, sideSlugs = sideSlugs,
+        recipeMinutes = recipeMinutes,
         onEditMeal = { editingToToday = false; editing = it },
         onMakeToday = { meal, slotTaken ->
             // Today's slot already has a meal: let him pick another meal or day instead of merging them.
@@ -200,6 +204,8 @@ fun MealPlanContent(
     onCookMeal: (MealRequest) -> Unit = {},
     /** Recipes in the Sides chapter, so they can be shown under the main they go with. */
     sideSlugs: Set<String> = emptySet(),
+    /** Total cook minutes per recipe slug, for showing a meal's lead time on the card. */
+    recipeMinutes: Map<String, Long> = emptyMap(),
     /** Move or remove a whole meal (long-press or the ⋮ button). */
     onEditMeal: ((MealGroup) -> Unit)? = null,
     onSwapDay: ((LocalDate) -> Unit)? = null,
@@ -277,6 +283,7 @@ fun MealPlanContent(
                     // One card per meal: the main on top, its sides under it.
                     val (mains, sides) = meal.mainsAndSides { it in sideSlugs }
                     val ordered = meal.copy(entries = mains + sides)
+                    val leadMinutes = ordered.slugs.mapNotNull { recipeMinutes[it] }.maxOrNull()
                     item(key = "m-$date-${meal.entryType}") {
                         MealCard(
                             type = meal.entryType,
@@ -288,6 +295,7 @@ fun MealPlanContent(
                             onCook = if (ordered.cookable) ({
                                 onCookMeal(MealRequest(mealTitle(ordered), ordered.slugs, day ?: today, meal.entryType))
                             }) else null,
+                            leadMinutes = leadMinutes,
                         )
                     }
                 }
@@ -307,12 +315,19 @@ private fun MealCard(
     onEdit: (() -> Unit)?,
     onCook: (() -> Unit)?,
     onMakeToday: (() -> Unit)? = null,
+    leadMinutes: Long? = null,
 ) {
     val colors = MaterialTheme.colorScheme
+    val leadText = leadMinutes?.let { app.yeschef.data.cook.formatShort(it * 60) }
     Surface(shape = MaterialTheme.shapes.large, color = colors.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(bottom = if (sides.isEmpty() && onCook == null && onMakeToday == null) 0.dp else 10.dp)) {
             mains.forEachIndexed { i, entry ->
-                MealRow(entry, serverUrl, onOpenRecipe, imageSize = 64, label = if (i == 0) type else null, onLongClick = onEdit, onMore = if (i == 0) onEdit else null)
+                MealRow(
+                    entry, serverUrl, onOpenRecipe, imageSize = 64,
+                    label = if (i == 0) type else null,
+                    leadText = if (i == 0) leadText else null,
+                    onLongClick = onEdit, onMore = if (i == 0) onEdit else null,
+                )
             }
             if (sides.isNotEmpty()) {
                 Text(
@@ -355,6 +370,7 @@ private fun MealRow(
     onOpenRecipe: (String) -> Unit,
     imageSize: Int,
     label: String?,
+    leadText: String? = null,
     compact: Boolean = false,
     onLongClick: (() -> Unit)? = null,
     onMore: (() -> Unit)? = null,
@@ -362,6 +378,7 @@ private fun MealRow(
     val colors = MaterialTheme.colorScheme
     val title = entry.recipeName ?: entry.title?.takeIf { it.isNotBlank() } ?: "Untitled"
     val slug = entry.recipeSlug
+    var expandNote by remember(entry.id) { mutableStateOf(false) }
     Row(
         Modifier.fillMaxWidth()
             .combinedClickable(onLongClick = onLongClick) { slug?.let(onOpenRecipe) }
@@ -374,8 +391,13 @@ private fun MealRow(
         }
         Column(Modifier.weight(1f)) {
             if (label != null) {
-                Surface(shape = MaterialTheme.shapes.small, color = colors.tertiaryContainer) {
-                    Text(label.uppercase(), style = OverlineStyle, color = colors.onTertiaryContainer, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Surface(shape = MaterialTheme.shapes.small, color = colors.tertiaryContainer) {
+                        Text(label.uppercase(), style = OverlineStyle, color = colors.onTertiaryContainer, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
+                    }
+                    if (leadText != null) {
+                        Text("~$leadText", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
+                    }
                 }
                 Spacer(Modifier.size(6.dp))
             }
@@ -385,8 +407,15 @@ private fun MealRow(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            entry.text?.takeIf { it.isNotBlank() }?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            entry.text?.takeIf { it.isNotBlank() }?.let { note ->
+                Text(
+                    note,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant,
+                    maxLines = if (expandNote) Int.MAX_VALUE else 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.clip(MaterialTheme.shapes.small).clickable { expandNote = !expandNote }.padding(top = 2.dp),
+                )
             }
         }
         if (onMore != null) {

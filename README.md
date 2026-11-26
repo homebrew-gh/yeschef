@@ -26,7 +26,8 @@ your own Mealie server.
   from, and you can filter the list to one recipe. Tick items or add new ones offline. Items you
   type in by hand start under Other; tap the **magic wand** at the top and Mealie's ingredient
   parser (its AI parser, if Mealie has AI set up) links them to foods Mealie already knows, so they
-  move into those foods' aisles. Items that aren't a known food stay under Other.
+  move into those foods' aisles. Items that aren't a known food stay under Other; long-press any
+  item to move it into a store section and optionally remember that aisle for future lists.
 - **Multiple lists.** Switch, create, rename and delete lists. **Clear cart** removes everything
   you've ticked, and **Uncheck all** starts the list over. The screen reopens the list you
   were last on, even after a restart.
@@ -36,13 +37,15 @@ your own Mealie server.
   list it's on. Ticking an item updates its own list, and the add bar lets you pick which list a
   new item goes on.
 - **Cookbook.** Recipes read like a cookbook, with chapters from Mealie categories and filter chips
-  from tags (see [the cookbook scheme](#the-cookbook-categories-and-tags)). Sort by name, newest, rating,
+  from protein and style tags (see [the cookbook scheme](#the-cookbook-categories-and-tags)). Sort by name, newest, rating,
   quickest or "not made in a while", or let the dice pick something.
 - **Cook mode ("Let's cook!").** Large text, screen stays awake, and each step shows the ingredients it needs
   ("You'll need"). When you finish, YesChef offers to mark the recipe as cooked. Starting it, for one
   recipe or a whole meal, plays a one-second scene picked at random: a wok tossing stir-fry, a
   cleaver chopping a carrot, or a pot steaming. Tap to skip; it's off when animations are turned off
-  on the phone.
+  on the phone. In whole-meal cook mode, you can check off steps as you finish them, nudge the
+  timeline `−5 min` or `+5 min` if you run ahead or behind, filter by dish, scale any dish's
+  servings, see hands-off oven/simmer steps at a glance, and jump straight back to the active step.
 - **Cooking notes.** Tap the mic in cook mode and say what happened ("needed 10 more minutes").
   Notes are tagged with the step on screen and saved to the recipe's timeline in Mealie, ready for
   an assistant to review.
@@ -55,7 +58,7 @@ your own Mealie server.
   timer, labelled with the step and recipe. Run several at once from the tray or the notification.
   A finished timer rings with your alarm sound, even when the app is closed.
 - **Servings scaler.** Scales every amount, including ones Mealie hasn't parsed.
-- **Nutrition.** Mealie's per-serving values, in a section that expands when tapped.
+- **Nutrition.** Mealie's per-serving calories and macros summarized on the collapsed card and expanded in full when tapped.
 - **Recipe photos.** Take one with the camera or pick one from the gallery.
 - **Add recipes from a link or a photo.** Tap the **+** button in the cookbook's bottom corner and paste a recipe page's link,
   or share a page to YesChef from your browser. Mealie imports it and the recipe opens. If Mealie
@@ -63,8 +66,8 @@ your own Mealie server.
   **From a photo** appears: snap a cookbook page or recipe card (or pick up to 4 photos) and the AI
   writes it up. The photo option needs an image provider in Mealie's AI settings. Imports need the
   server, so they don't work offline.
-  After an import, YesChef runs Mealie's ingredient parser over the new recipe (the AI parser when
-  Mealie has AI) and links each line to a food, so the ingredients land in their aisles on a
+  After an import, YesChef splits combined lines ("salt and pepper, to taste"), runs Mealie's ingredient parser over the new recipe (the AI parser when
+  Mealie has AI), validates fuzzy matches against Mealie's food names, plurals and aliases (so "peanut butter" doesn't link to "butter"), and links each line to a food so the ingredients land in their aisles on a
   shopping list. Foods Mealie didn't have yet are created without an aisle; give them a label in
   Mealie, or let an assistant do it. It also picks a chapter from the page's own course (Main
   Course, Side Dish, Cocktails...) or a name that says it (soup, salad), and tags from the foods
@@ -184,11 +187,11 @@ table above into your assistant's instructions and give it access to Mealie's AP
 
 ## Cooking notes
 
-In cook mode, the mic button takes a quick spoken note with Android's own speech recognizer (on the phone, offline when your phone supports it; no server model needed). Each note records the time and the step on screen. If the phone has no speech recognizer, the button opens a box to type in instead.
+In cook mode, the mic button takes a quick spoken note with Android's own speech recognizer (on the phone, offline when your phone supports it; no server model needed). Each note records the time and the step on screen, and a brief snackbar previews what was heard with an **Edit** shortcut. If the phone has no speech recognizer, the button opens a box to type in instead.
 
-Notes stay on the phone, even if the app is closed, until you leave cook mode. Then YesChef shows them so you can fix, delete or add to them, and **Save to Mealie** adds them to the recipe's timeline as one "Cook notes" entry (and, if ticked, marks the recipe as cooked). Like other edits, this works offline and goes with the next sync. **Keep for later** leaves them on the phone, and the recipe page shows a button to save them.
+Notes stay on the phone, even if the app is closed, until you leave cook mode (or finish a whole-meal cook). Then YesChef shows them so you can fix, delete or add to them, and **Save to Mealie** adds them to each recipe's timeline as one "Cook notes" entry (noting the scaled servings or co-cooked dishes when relevant, and marking the recipe as cooked if ticked). Like other edits, this works offline and goes with the next sync. **Keep for later** leaves them on the phone, and the recipe page shows a button to save them.
 
-With the [mealie-startos](https://github.com/homebrew-gh/mealie-startos) AI connector, ask your assistant something like "review today's cooking notes and suggest fixes": its `list_cook_notes` tool reads them, and it can update the recipe once you agree.
+On a recipe page, permanent recipe **Notes** and dated **Cook log** entries sit collapsed at the bottom so they stay out of the way while cooking, with a quiet **Add a cooking note** button for thoughts after dinner. With the [mealie-startos](https://github.com/homebrew-gh/mealie-startos) AI connector, ask your assistant something like "review my recent cooking notes and suggest fixes": its `list_cook_notes` tool reads them, and it can update the recipe once you agree.
 
 ## Scaling and nutrition
 

@@ -150,14 +150,19 @@ fun RecipeGrid(
     var query by rememberSaveable { mutableStateOf("") }
     var chapter by rememberSaveable { mutableStateOf(initialChapter) }
     var protein by rememberSaveable { mutableStateOf(initialProtein) }
+    var style by rememberSaveable { mutableStateOf<String?>(null) }
     var sort by rememberSaveable { mutableStateOf(Cookbook.Sort.Chapters) }
     val chapters = remember(recipes) { Cookbook.chapterOrder(recipes) }
-    // Only offer protein chips for recipes in the chapter being looked at.
+    // Only offer protein and style chips for recipes in the chapter being looked at.
     val proteins = remember(recipes, chapter) {
         val inChapter = Cookbook.filter(recipes, "", chapter, null).flatMap(Cookbook::proteinsOf).toSet()
         Cookbook.proteins.map { it.first }.filter { it in inChapter }
     }
-    val shown = remember(recipes, query, chapter, protein) { Cookbook.filter(recipes, query, chapter, protein) }
+    val styles = remember(recipes, chapter) {
+        val inChapter = Cookbook.filter(recipes, "", chapter, null).flatMap(Cookbook::stylesOf).toSet()
+        Cookbook.styleTags.filter { it in inChapter }
+    }
+    val shown = remember(recipes, query, chapter, protein, style) { Cookbook.filter(recipes, query, chapter, protein, style) }
     // Inside one chapter there's nothing to group, so cookbook order is just A to Z.
     val sections = remember(shown, sort, chapter) {
         Cookbook.sections(shown, if (chapter != null && sort == Cookbook.Sort.Chapters) Cookbook.Sort.AtoZ else sort)
@@ -168,8 +173,8 @@ fun RecipeGrid(
     var rollCount by rememberSaveable { mutableStateOf(0) }
     fun roll(from: String?) {
         // Roll from the picked chapter; if the filters leave nothing there, from anything.
-        fun draw() = Cookbook.surprise(recipes, query, from, protein, today)
-            ?: Cookbook.surprise(recipes, query, null, protein, today)
+        fun draw() = Cookbook.surprise(recipes, query, from, protein, today, style = style)
+            ?: Cookbook.surprise(recipes, query, null, protein, today, style = style)
         // "Roll again" tries not to land on the same recipe twice running.
         var pick = draw() ?: return
         repeat(4) { if (pick.slug == rolledSlug) pick = draw() ?: pick }
@@ -243,6 +248,9 @@ fun RecipeGrid(
                         if (protein != null && picked != null &&
                             Cookbook.filter(recipes, "", picked, protein).isEmpty()
                         ) protein = null
+                        if (style != null && picked != null &&
+                            Cookbook.filter(recipes, "", picked, null, style).isEmpty()
+                        ) style = null
                     }
                 }
             }
@@ -261,6 +269,18 @@ fun RecipeGrid(
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = colors.tertiaryContainer,
                                     selectedLabelColor = colors.onTertiaryContainer,
+                                ),
+                            )
+                        }
+                        styles.forEach { s ->
+                            FilterChip(
+                                selected = style == s,
+                                onClick = { style = if (style == s) null else s },
+                                label = { Text(s) },
+                                shape = CircleShape,
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = colors.secondaryContainer,
+                                    selectedLabelColor = colors.onSecondaryContainer,
                                 ),
                             )
                         }

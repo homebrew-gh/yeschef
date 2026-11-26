@@ -63,8 +63,17 @@ interface MealieApi {
     @GET("foods")
     suspend fun foods(@Query("perPage") perPage: Int = -1): Page<JsonObject>
 
+    @GET("foods/{id}")
+    suspend fun foodRaw(@Path("id") id: String): JsonObject
+
     @POST("foods")
     suspend fun createFood(@Body body: JsonObject): JsonObject
+
+    @PUT("foods/{id}")
+    suspend fun updateFood(@Path("id") id: String, @Body body: JsonObject): JsonObject
+
+    @GET("groups/labels")
+    suspend fun labels(@Query("perPage") perPage: Int = -1): Page<LabelDto>
 
     @GET("units")
     suspend fun units(@Query("perPage") perPage: Int = -1): Page<JsonObject>
@@ -91,6 +100,15 @@ interface MealieApi {
     /** Adds an entry to a recipe's timeline (the cook notes saved from cook mode). */
     @POST("recipes/timeline/events")
     suspend fun createTimelineEvent(@Body body: JsonObject): ResponseBody
+
+    /** Reads timeline entries for one recipe (newest first). */
+    @GET("recipes/timeline/events")
+    suspend fun timelineEvents(
+        @Query("queryFilter") queryFilter: String,
+        @Query("perPage") perPage: Int = 20,
+        @Query("orderBy") orderBy: String = "timestamp",
+        @Query("orderDirection") orderDirection: String = "desc",
+    ): Page<TimelineEventDto>
 
     /** Records that the recipe was cooked ("I made this" in Mealie). */
     @PATCH("recipes/{slug}/last-made")

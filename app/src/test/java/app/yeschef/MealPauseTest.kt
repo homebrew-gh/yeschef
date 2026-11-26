@@ -28,4 +28,13 @@ class MealPauseTest {
         assertEquals(listOf(25 * min, 55 * min), resumed.reminders.map { it.at })
         assertEquals(session, session.resumed(50 * min))
     }
+
+    @Test fun shiftingNudgesReadyTimeAndReminders() {
+        val later = session.shifted(5 * min)
+        assertEquals(65 * min, later.readyAt)
+        assertEquals(listOf(15 * min, 45 * min), later.reminders.map { it.at })
+        val earlier = session.shifted(-5 * min)
+        assertEquals(55 * min, earlier.readyAt)
+        assertEquals(listOf(5 * min, 35 * min), earlier.reminders.map { it.at })
+    }
 }

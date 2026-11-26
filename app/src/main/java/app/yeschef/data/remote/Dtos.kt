@@ -81,6 +81,23 @@ data class RecipeDetailDto(
     val nutrition: Map<String, kotlinx.serialization.json.JsonElement?>? = null,
     val recipeIngredient: List<IngredientDto> = emptyList(),
     val recipeInstructions: List<StepDto> = emptyList(),
+    val notes: List<NoteDto> = emptyList(),
+    val tools: List<NamedDto> = emptyList(),
+    /** Cached timeline entries (cook notes, "Made this" comments, "Recipe updated" entries). */
+    val timeline: List<TimelineEventDto> = emptyList(),
+)
+
+@Serializable
+data class NoteDto(val title: String? = null, val text: String? = null)
+
+@Serializable
+data class TimelineEventDto(
+    val id: String? = null,
+    val recipeId: String? = null,
+    val subject: String? = null,
+    val eventType: String? = null,
+    val eventMessage: String? = null,
+    val timestamp: String? = null,
 )
 
 @Serializable

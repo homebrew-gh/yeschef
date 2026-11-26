@@ -53,8 +53,10 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -125,7 +127,9 @@ import app.yeschef.data.cook.ingredientsForSteps
 import app.yeschef.data.cook.plainDigits
 import app.yeschef.data.cook.timerStepLabel
 import app.yeschef.data.remote.IngredientDto
+import app.yeschef.data.remote.NoteDto
 import app.yeschef.data.remote.RecipeDetailDto
+import app.yeschef.data.remote.TimelineEventDto
 import app.yeschef.ui.RecipeImage
 import app.yeschef.ui.SectionLabel
 import app.yeschef.ui.YcTopBar
@@ -220,6 +224,7 @@ fun RecipeDetailScreen(
     }
     var noteStep by rememberSaveable { mutableStateOf<Int?>(null) }
     var noteAt by rememberSaveable { mutableStateOf(0L) }
+    var currentScale by remember(detail?.id) { mutableStateOf(1.0) }
     var typingNote by rememberSaveable { mutableStateOf(false) }
     var editingNoteAt by rememberSaveable { mutableStateOf<Long?>(null) }
     var reviewingNotes by rememberSaveable { mutableStateOf(false) }
@@ -232,7 +237,19 @@ fun RecipeDetailScreen(
         val label = s?.let { CookNotes.stepLabel(it.summary?.takeIf { t -> t.isNotBlank() } ?: it.title, it.text) }
         val note = CookNote(at = noteAt, text = text, step = step?.plus(1), stepLabel = label)
         changeNotes { it + note }
-        if (!reviewingNotes) scope.launch { snackbar.showSnackbar("Note added") }
+        if (!cookMode && !reviewingNotes) {
+            markCookedToo = false
+            reviewingNotes = true
+        } else if (!reviewingNotes) {
+            scope.launch {
+                val res = snackbar.showSnackbar(
+                    message = "Saved: \"${CookNotes.snippet(text)}\"",
+                    actionLabel = "Edit",
+                    duration = SnackbarDuration.Short,
+                )
+                if (res == SnackbarResult.ActionPerformed) editingNoteAt = note.at
+            }
+        }
     }
     val dictate = rememberDictation(
         prompt = { noteStep?.let { "Note for step ${it + 1}" } ?: "Cooking note" },
@@ -280,7 +297,9 @@ fun RecipeDetailScreen(
                 onKeep = { reviewingNotes = false },
                 onSave = {
                     reviewingNotes = false
-                    val message = CookNotes.message(cookNotes) { clockText(it) }
+                    val base = detail?.let { baseServings(it.recipeServings, it.recipeYield) }
+                    val contextLines = listOfNotNull(CookNotes.scaleContext(currentScale, base))
+                    val message = CookNotes.message(cookNotes, { clockText(it) }, contextLines)
                     val cooked = markCookedToo
                     scope.launch {
                         repo.saveCookNotes(noteId, message)
@@ -465,6 +484,7 @@ fun RecipeDetailScreen(
         noteCount = cookNotes.size,
         onAddNote = if (noteId != null) ({ step -> startNote(step) }) else null,
         onReviewNotes = if (noteId != null && cookNotes.isNotEmpty()) ({ reviewingNotes = true }) else null,
+        onScaleChanged = { currentScale = it },
         snackbarHostState = snackbar,
     )
 }
@@ -504,6 +524,7 @@ fun RecipeDetailContent(
     noteCount: Int = 0,
     onAddNote: ((step: Int?) -> Unit)? = null,
     onReviewNotes: (() -> Unit)? = null,
+    onScaleChanged: ((Double) -> Unit)? = null,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
     val colors = MaterialTheme.colorScheme
@@ -514,6 +535,7 @@ fun RecipeDetailContent(
     var servings by remember(detail?.id) { mutableStateOf(initialServings ?: servingsBase ?: 1.0) }
     var factor by remember(detail?.id) { mutableStateOf(1.0) }
     val scale = servingsBase?.let { servings / it } ?: factor
+    LaunchedEffect(scale) { onScaleChanged?.invoke(scale) }
     val listState = rememberLazyListState()
     val bodyStyle = if (cookMode) MaterialTheme.typography.titleLarge.copy(fontFamily = MaterialTheme.typography.bodyLarge.fontFamily)
     else MaterialTheme.typography.bodyLarge
@@ -560,6 +582,9 @@ fun RecipeDetailContent(
         }
         val stepIngredients = remember(detail, cookMode) { if (cookMode) stepIngredientsFor(detail) else emptyList() }
         val firstUse = remember(stepIngredients) { firstSteps(stepIngredients) }
+        val equipment = remember(detail.tools) { detail.tools.mapNotNull { it.name?.trim()?.takeIf(String::isNotEmpty) } }
+        val recipeNotes = remember(detail.notes) { detail.notes.filter { !it.text.isNullOrBlank() || !it.title.isNullOrBlank() } }
+        val logEntries = remember(detail.timeline) { detail.timeline.filter { !it.eventMessage.isNullOrBlank() } }
         // On the tablet the recipe keeps a readable width, centred.
         LazyColumn(
             Modifier.padding(padding).fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = 860.dp),
@@ -638,6 +663,17 @@ fun RecipeDetailContent(
                 }
             }
 
+            if (equipment.isNotEmpty() && !cookMode) {
+                item {
+                    Text(
+                        "Equipment: ${equipment.joinToString(" · ")}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                    )
+                }
+            }
+
             if ((onCookWithSides != null || onAddToList != null || onShare != null || onReviewNotes != null) && !cookMode) {
                 item {
                     FlowRow(Modifier.padding(start = 8.dp, top = 4.dp, end = 8.dp)) {
@@ -683,6 +719,7 @@ fun RecipeDetailContent(
                             ingredient.title?.takeIf { it.isNotBlank() }?.let {
                                 Text(it, Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp), style = MaterialTheme.typography.titleSmall, color = colors.primary)
                             }
+                            if (app.yeschef.data.isHeadingOnly(ingredient)) return@forEachIndexed
                             val done = index in checkedIngredients
                             IngredientRow(scaleIngredient(ingredientText(ingredient), scale), done, bodyStyle) {
                                 checkedIngredients = if (done) checkedIngredients - index else checkedIngredients + index
@@ -746,6 +783,31 @@ fun RecipeDetailContent(
                         Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(8.dp))
                         Text("Done cooking, mark as cooked", style = MaterialTheme.typography.titleMedium)
+                    }
+                }
+            }
+            if (!cookMode) {
+                if (recipeNotes.isNotEmpty()) {
+                    item { RecipeNotesCard(recipeNotes, Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp)) }
+                }
+                if (logEntries.isNotEmpty()) {
+                    item {
+                        CookLogCard(
+                            entries = logEntries,
+                            onAddNote = onAddNote?.let { add -> { add(null) } },
+                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp),
+                        )
+                    }
+                } else if (onAddNote != null) {
+                    item {
+                        TextButton(
+                            onClick = { onAddNote(null) },
+                            modifier = Modifier.padding(start = 12.dp, top = 8.dp),
+                        ) {
+                            Icon(Icons.Filled.Mic, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Add a cooking note")
+                        }
                     }
                 }
             }
@@ -883,17 +945,33 @@ private fun nutritionRows(nutrition: Map<String, kotlinx.serialization.json.Json
     if (nutrition == null) return emptyList()
     return NUTRIENTS.mapNotNull { (key, label) ->
         val raw = (nutrition[key] as? kotlinx.serialization.json.JsonPrimitive)?.content?.trim()
-        if (raw.isNullOrEmpty() || raw == "null" || raw == "0") return@mapNotNull null
+        if (raw.isNullOrEmpty() || raw.equals("null", ignoreCase = true)) return@mapNotNull null
         val unit = when (key) { "calories" -> " kcal"; "sodiumContent", "cholesterolContent" -> " mg"; else -> " g" }
         label to (if (raw.toDoubleOrNull() != null) raw + unit else raw)
     }
+}
+
+/** Compact macro summary for the collapsed Nutrition header, e.g. "520 kcal · 31g P · 38g C · 26g F". */
+private fun macroSummary(rows: List<Pair<String, String>>): String {
+    val byLabel = rows.toMap()
+    val compact = { label: String, tag: String ->
+        byLabel[label]?.replace(" ", "")?.let { "$it $tag" }
+    }
+    val parts = listOfNotNull(
+        byLabel["Calories"],
+        compact("Protein", "P"),
+        compact("Carbs", "C"),
+        compact("Fat", "F"),
+    )
+    return if (parts.size >= 2) parts.joinToString(" · ")
+    else listOfNotNull(byLabel["Calories"], "per serving").joinToString(" · ")
 }
 
 @Composable
 private fun NutritionCard(rows: List<Pair<String, String>>, modifier: Modifier = Modifier) {
     val colors = MaterialTheme.colorScheme
     var open by rememberSaveable { mutableStateOf(false) }
-    val headline = rows.firstOrNull { it.first == "Calories" }?.second
+    val headline = remember(rows) { macroSummary(rows) }
     Surface(shape = MaterialTheme.shapes.large, color = colors.surfaceContainerLow, modifier = modifier.fillMaxWidth()) {
         Column {
             Row(
@@ -903,7 +981,7 @@ private fun NutritionCard(rows: List<Pair<String, String>>, modifier: Modifier =
                 Text("Nutrition", style = MaterialTheme.typography.titleSmall, color = colors.primary)
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    listOfNotNull(headline, "per serving").joinToString(" · "),
+                    headline,
                     style = MaterialTheme.typography.labelMedium,
                     color = colors.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
@@ -927,6 +1005,94 @@ private fun NutritionCard(rows: List<Pair<String, String>>, modifier: Modifier =
             }
         }
     }
+}
+
+/** Permanent recipe notes (tips, make-ahead advice, nutrition estimates), collapsed by default. */
+@Composable
+private fun RecipeNotesCard(notes: List<NoteDto>, modifier: Modifier = Modifier) {
+    val colors = MaterialTheme.colorScheme
+    var open by rememberSaveable { mutableStateOf(false) }
+    val subtitle = if (notes.size == 1) notes.first().title?.takeIf { it.isNotBlank() } ?: "1 note" else "${notes.size} notes"
+    Surface(shape = MaterialTheme.shapes.large, color = colors.surfaceContainerLow, modifier = modifier.fillMaxWidth()) {
+        Column {
+            Row(
+                Modifier.fillMaxWidth().clickable { open = !open }.padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Notes", style = MaterialTheme.typography.titleSmall, color = colors.primary)
+                Spacer(Modifier.width(8.dp))
+                Text(subtitle, style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
+                Icon(if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, contentDescription = if (open) "Hide notes" else "Show notes", tint = colors.outline)
+            }
+            if (open) {
+                Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    notes.forEach { note ->
+                        Column {
+                            note.title?.takeIf { it.isNotBlank() }?.let {
+                                Text(it, style = MaterialTheme.typography.labelLarge, color = colors.tertiary)
+                                Spacer(Modifier.height(2.dp))
+                            }
+                            note.text?.takeIf { it.isNotBlank() }?.let {
+                                Text(it, style = MaterialTheme.typography.bodyMedium, color = colors.onSurface)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Dated cook-log entries from Mealie's recipe timeline, collapsed by default at the bottom. */
+@Composable
+private fun CookLogCard(entries: List<TimelineEventDto>, onAddNote: (() -> Unit)?, modifier: Modifier = Modifier) {
+    val colors = MaterialTheme.colorScheme
+    var open by rememberSaveable { mutableStateOf(false) }
+    val subtitle = if (entries.size == 1) "1 entry" else "${entries.size} entries"
+    Surface(shape = MaterialTheme.shapes.large, color = colors.surfaceContainerLow, modifier = modifier.fillMaxWidth()) {
+        Column {
+            Row(
+                Modifier.fillMaxWidth().clickable { open = !open }.padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Cook log", style = MaterialTheme.typography.titleSmall, color = colors.primary)
+                Spacer(Modifier.width(8.dp))
+                Text(subtitle, style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
+                Icon(if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, contentDescription = if (open) "Hide cook log" else "Show cook log", tint = colors.outline)
+            }
+            if (open) {
+                Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    entries.forEach { e ->
+                        Column {
+                            val header = listOfNotNull(shortLogDate(e.timestamp), e.subject?.takeIf { it.isNotBlank() }).joinToString("  ·  ")
+                            if (header.isNotEmpty()) {
+                                Text(header, style = MaterialTheme.typography.labelMedium, color = colors.tertiary)
+                                Spacer(Modifier.height(2.dp))
+                            }
+                            Text(e.eventMessage.orEmpty().trim(), style = MaterialTheme.typography.bodyMedium, color = colors.onSurface)
+                        }
+                    }
+                    if (onAddNote != null) {
+                        TextButton(onClick = onAddNote, contentPadding = PaddingValues(horizontal = 0.dp)) {
+                            Icon(Icons.Filled.Mic, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Add a cooking note")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private val logDateFormat = java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy")
+
+private fun shortLogDate(iso: String?): String? {
+    if (iso.isNullOrBlank()) return null
+    val date = runCatching { java.time.OffsetDateTime.parse(iso).atZoneSameInstant(java.time.ZoneId.systemDefault()).toLocalDate() }.getOrNull()
+        ?: runCatching { java.time.LocalDate.parse(iso.take(10)) }.getOrNull()
+        ?: return null
+    return date.format(logDateFormat)
 }
 
 /**

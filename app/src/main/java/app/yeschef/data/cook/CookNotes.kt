@@ -31,11 +31,16 @@ object CookNotes {
     }
 
     /**
-     * The timeline message: one line per note, in the order taken.
+     * The timeline message: optional context lines (scale, co-cooked dishes) followed by
+     * one line per note, in the order taken.
      * "6:42 PM, step 3 (Sear the steak): needed 2 more minutes a side"
      */
-    fun message(notes: List<CookNote>, clock: (Long) -> String): String =
-        notes.filter { it.text.isNotBlank() }.sortedBy { it.at }.joinToString("\n") { n ->
+    fun message(
+        notes: List<CookNote>,
+        clock: (Long) -> String,
+        contextLines: List<String> = emptyList(),
+    ): String {
+        val body = notes.filter { it.text.isNotBlank() }.sortedBy { it.at }.map { n ->
             val where = when {
                 n.step == null -> ""
                 n.stepLabel.isNullOrBlank() -> ", step ${n.step}"
@@ -43,6 +48,30 @@ object CookNotes {
             }
             "- ${clock(n.at)}$where: ${n.text.trim()}"
         }
+        if (body.isEmpty()) return ""
+        val header = contextLines.map { it.trim() }.filter { it.isNotEmpty() }
+        return (header + body).joinToString("\n")
+    }
+
+    /** Context line when a recipe was scaled away from its base servings, or null at 1×. */
+    fun scaleContext(scale: Double, baseServings: Double?): String? {
+        if (kotlin.math.abs(scale - 1.0) < 0.01) return null
+        val mult = "×${formatAmount(scale)}"
+        return if (baseServings != null && baseServings > 0) {
+            "Cooked at ${formatAmount(baseServings * scale)} servings ($mult)"
+        } else {
+            "Cooked at $mult"
+        }
+    }
+
+    /** Context line listing the other dishes cooked alongside this one, or null if solo. */
+    fun mealContext(otherDishNames: List<String>): String? {
+        val names = otherDishNames.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        return if (names.isEmpty()) null else "Cooked with: ${names.joinToString(", ")}"
+    }
+
+    /** Short preview for the snackbar confirmation right after dictating a note. */
+    fun snippet(text: String, max: Int = 48): String = shorten(text.trim(), max)
 
     /**
      * Which step the cook is looking at, from the steps on screen: the first one at
