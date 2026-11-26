@@ -43,6 +43,7 @@ import app.yeschef.ui.cook.TimerTrayContent
 import app.yeschef.ui.cook.UnitConverterContent
 import app.yeschef.ui.cook.KitchenReferenceContent
 import app.yeschef.data.cook.RefTopic
+import app.yeschef.ui.mealplan.AddSideToMealContent
 import app.yeschef.ui.mealplan.AddToPlanContent
 import app.yeschef.ui.mealplan.MealPlanContent
 import app.yeschef.ui.mealplan.MoveMealContent
@@ -243,9 +244,22 @@ class ScreenshotTest {
             MealPlanContent(
                 Sample.mealPlan, Sample.today, null, {}, actions = { SyncIcon() },
                 sideSlugs = setOf("jasmine-rice", "roasted-broccoli", "yogurt-dill-sauce", "garlic-green-beans"),
-                onEditMeal = {}, onSwapDay = {}, onAddToDay = {},
+                recipeMinutes = mapOf("banana-bread" to 70L, "lasagna" to 75L, "garlic-green-beans" to 15L, "lemon-garlic-chicken" to 45L),
+                onCookRecipe = { _, _ -> },
+                onEditMeal = {}, onAddSide = {}, onRemoveMeal = {}, onSwapDay = {}, onAddToDay = {},
             )
         }
+    }
+
+    /** Meal plan on a tablet: centered editorial column so cards stay well-proportioned. */
+    @Test fun tabletMealPlan() = tablet {
+        MealPlanContent(
+            Sample.mealPlan, Sample.today, null, {}, actions = { SyncIcon() },
+            sideSlugs = setOf("jasmine-rice", "roasted-broccoli", "yogurt-dill-sauce", "garlic-green-beans"),
+            recipeMinutes = mapOf("banana-bread" to 70L, "lasagna" to 75L, "garlic-green-beans" to 15L, "lemon-garlic-chicken" to 45L),
+            onCookRecipe = { _, _ -> },
+            onEditMeal = {}, onAddSide = {}, onRemoveMeal = {}, onSwapDay = {}, onAddToDay = {},
+        )
     }
 
     /** The past week opened: yesterday's dinner that didn't get made, with "Make it today". */
@@ -306,6 +320,20 @@ class ScreenshotTest {
         paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_6.copy(screenHeight = 2600))
         sheet {
             AddToPlanContent(Sample.recipes, Sample.today, Sample.today.plusDays(2), { _, _, _ -> }, {}, initialPicked = listOf("miso-glazed-salmon", "herb-rice-pilaf"))
+        }
+    }
+
+    @Test fun addSideToMealSheet() {
+        paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_6.copy(screenHeight = 2400))
+        sheet {
+            AddSideToMealContent(
+                mealTitle = "Classic lasagna dinner",
+                recipes = Sample.recipes,
+                existingSlugs = setOf("classic-lasagna", "garlic-green-beans"),
+                onAdd = {},
+                onCancel = {},
+                initialPicked = listOf("herb-rice-pilaf"),
+            )
         }
     }
 

@@ -34,7 +34,7 @@ import app.yeschef.data.local.RecipeEntity
 import app.yeschef.ui.SectionLabel
 
 /** Chapters offered first when picking sides; everything else follows A to Z. */
-private val sideChapters = listOf("Sides", "Soups & Salads", "Sauces & Basics", "Baking")
+val sideChapters = listOf("Sides", "Soups & Salads", "Sauces & Basics", "Baking")
 
 /** Pick one or more recipes to cook alongside the current one. Stateless apart from the picks. */
 @Composable
