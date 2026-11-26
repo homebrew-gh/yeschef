@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import app.yeschef.data.cook.ActiveCookSession
 import app.yeschef.data.cook.CookNote
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
@@ -29,6 +30,7 @@ class SettingsStore(private val context: Context) {
     private val dayAddToKey = stringPreferencesKey("shopping_day_add_to")
     private val diceKey = stringPreferencesKey("dice_chapter")
     private val lastListKey = stringPreferencesKey("last_shopping_list")
+    private val activeCookKey = stringPreferencesKey("active_cook_session")
 
     /** The cookbook chapter the dice rolls from, last picked; null means any recipe. Mains until picked. */
     val diceChapter: Flow<String?> = context.dataStore.data.map { prefs ->
@@ -64,6 +66,18 @@ class SettingsStore(private val context: Context) {
 
     suspend fun saveLastShoppingList(id: String) {
         context.dataStore.edit { it[lastListKey] = id }
+    }
+
+    /** Active single-recipe cook session, preserved across tab switches and app restarts. */
+    val activeCook: Flow<ActiveCookSession?> = context.dataStore.data.map { prefs ->
+        prefs[activeCookKey]?.let { runCatching { Json.decodeFromString(ActiveCookSession.serializer(), it) }.getOrNull() }
+    }
+
+    suspend fun saveActiveCook(session: ActiveCookSession?) {
+        context.dataStore.edit { prefs ->
+            if (session == null) prefs.remove(activeCookKey)
+            else prefs[activeCookKey] = Json.encodeToString(ActiveCookSession.serializer(), session)
+        }
     }
 
     /** Cook-mode notes not yet saved to Mealie, per recipe id. Kept across app restarts. */
@@ -112,6 +126,7 @@ class SettingsStore(private val context: Context) {
         context.dataStore.edit {
             it.remove(serverKey)
             it.remove(tokenKey)
+            it.remove(activeCookKey)
         }
     }
 }

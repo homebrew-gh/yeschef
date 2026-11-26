@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import app.yeschef.data.RecipeDraft
 import app.yeschef.data.changesFrom
+import app.yeschef.data.cook.ActiveCookSession
 import app.yeschef.data.cook.CookNote
 import app.yeschef.data.cook.CookNotes
 import app.yeschef.ui.cook.CookIntroOverlay
@@ -92,6 +93,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Scale
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.outlined.LightMode
@@ -112,6 +114,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -161,16 +165,36 @@ fun RecipeDetailScreen(
     val (entity, detail) = data
     val config by container.config.collectAsStateWithLifecycle()
     LaunchedEffect(slug) { repo.refreshRecipe(slug) }
+    // Cook mode persists in AppContainer/SettingsStore so switching tabs or leaving the app
+    // never drops checked ingredients, completed steps, scaling, or step position.
+    val activeCook by container.activeCook.collectAsStateWithLifecycle()
+    val sessionForThis = activeCook?.takeIf { it.slug == slug }
+    val cookMode = sessionForThis != null
+    var latestChecked by remember(slug) { mutableStateOf(sessionForThis?.checkedIngredients ?: emptySet()) }
+    var latestServings by remember(slug) { mutableStateOf(sessionForThis?.servings) }
+    var latestFactor by remember(slug) { mutableStateOf(sessionForThis?.factor ?: 1.0) }
+
     // Renaming a recipe changes its slug in Mealie; follow it once the sync brings it back.
     var recipeId by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(entity?.id) { entity?.id?.let { recipeId = it } }
     LaunchedEffect(entity == null, recipeId) {
         val id = recipeId
-        if (entity == null && id != null) repo.slugOf(id)?.takeIf { it != slug }?.let(onSlugChanged)
+        if (entity == null && id != null) {
+            repo.slugOf(id)?.takeIf { it != slug }?.let { newSlug ->
+                if (activeCook?.slug == slug) {
+                    container.updateActiveCook { it.copy(slug = newSlug) }
+                }
+                onSlugChanged(newSlug)
+            }
+        }
+    }
+    LaunchedEffect(detail?.name, detail?.recipeInstructions?.size, cookMode) {
+        val d = detail ?: return@LaunchedEffect
+        if (cookMode) {
+            container.updateActiveCook { it.copy(name = d.name, totalSteps = d.recipeInstructions.size) }
+        }
     }
 
-    // Cook mode keeps the screen awake while this recipe is open.
-    var cookMode by rememberSaveable { mutableStateOf(false) }
     // A little scene plays as cook mode starts.
     var cookIntro by remember { mutableStateOf(false) }
     if (cookIntro) CookIntroOverlay(onDone = { cookIntro = false })
@@ -323,7 +347,7 @@ fun RecipeDetailScreen(
     // Leaving cook mode without "Done cooking" doesn't log the recipe as cooked, but
     // notes taken along the way are still offered for review.
     fun leaveCookMode() {
-        cookMode = false
+        scope.launch { container.setActiveCook(null) }
         if (cookNotes.isNotEmpty()) {
             markCookedToo = false
             reviewingNotes = true
@@ -457,11 +481,24 @@ fun RecipeDetailScreen(
         serverUrl = config?.serverUrl,
         cookMode = cookMode,
         onStartCooking = {
-            cookMode = true
             cookIntro = true
+            scope.launch {
+                container.setActiveCook(
+                    ActiveCookSession(
+                        slug = slug,
+                        name = recipeName,
+                        checkedIngredients = latestChecked,
+                        completedSteps = emptySet(),
+                        servings = latestServings,
+                        factor = latestFactor,
+                        stepIndex = 0,
+                        totalSteps = detail?.recipeInstructions?.size ?: 0,
+                    ),
+                )
+            }
         },
         onFinishCooking = {
-            cookMode = false
+            scope.launch { container.setActiveCook(null) }
             if (cookNotes.isNotEmpty()) {
                 markCookedToo = true
                 reviewingNotes = true
@@ -472,6 +509,26 @@ fun RecipeDetailScreen(
                     snackbar.showSnackbar("Marked as cooked today")
                 }
             }
+        },
+        initialServings = sessionForThis?.servings,
+        initialFactor = sessionForThis?.factor ?: 1.0,
+        initialCheckedIngredients = sessionForThis?.checkedIngredients ?: emptySet(),
+        initialCompletedSteps = sessionForThis?.completedSteps ?: emptySet(),
+        initialStepIndex = sessionForThis?.stepIndex ?: 0,
+        onCheckedIngredientsChanged = { next ->
+            latestChecked = next
+            if (cookMode) scope.launch { container.updateActiveCook { it.copy(checkedIngredients = next) } }
+        },
+        onCompletedStepsChanged = { next ->
+            if (cookMode) scope.launch { container.updateActiveCook { it.copy(completedSteps = next) } }
+        },
+        onServingsChanged = { nextServings, nextFactor ->
+            latestServings = nextServings
+            latestFactor = nextFactor
+            if (cookMode) scope.launch { container.updateActiveCook { it.copy(servings = nextServings, factor = nextFactor) } }
+        },
+        onStepInViewChanged = { idx ->
+            if (cookMode) scope.launch { container.updateActiveCook { it.copy(stepIndex = idx) } }
         },
         tagLine = entity?.let { Cookbook.names(it.categories) + Cookbook.names(it.tags) }.orEmpty(),
         onEditTags = if (entity != null) ({ editingTags = true }) else null,
@@ -522,6 +579,14 @@ fun RecipeDetailContent(
     onAddToList: (() -> Unit)? = null,
     onShare: ((ShareKind, scale: Double) -> Unit)? = null,
     initialServings: Double? = null,
+    initialFactor: Double = 1.0,
+    initialCheckedIngredients: Set<Int> = emptySet(),
+    initialCompletedSteps: Set<Int> = emptySet(),
+    initialStepIndex: Int = 0,
+    onCheckedIngredientsChanged: ((Set<Int>) -> Unit)? = null,
+    onCompletedStepsChanged: ((Set<Int>) -> Unit)? = null,
+    onServingsChanged: ((servings: Double?, factor: Double) -> Unit)? = null,
+    onStepInViewChanged: ((Int) -> Unit)? = null,
     onCustomTimer: () -> Unit,
     onStartTimer: (label: String, seconds: Long) -> Unit,
     onKitchenTools: (() -> Unit)? = null,
@@ -536,16 +601,29 @@ fun RecipeDetailContent(
 ) {
     val colors = MaterialTheme.colorScheme
     val wide = isWide()
-    var checkedIngredients by remember(detail?.id) { mutableStateOf(setOf<Int>()) }
-    var completedSteps by remember(detail?.id) { mutableStateOf(setOf<Int>()) }
+    var checkedIngredients by remember(detail?.id) { mutableStateOf(initialCheckedIngredients) }
+    var completedSteps by remember(detail?.id, cookMode) { mutableStateOf(if (cookMode) initialCompletedSteps else emptySet()) }
     var ingredientsOpen by rememberSaveable(detail?.id, cookMode) { mutableStateOf(!cookMode) }
     // Servings scaler: by servings when the recipe says how many it makes, else by a multiplier.
     val servingsBase = remember(detail?.id) { detail?.let { baseServings(it.recipeServings, it.recipeYield) } }
     var servings by remember(detail?.id) { mutableStateOf(initialServings ?: servingsBase ?: 1.0) }
-    var factor by remember(detail?.id) { mutableStateOf(1.0) }
+    var factor by remember(detail?.id) { mutableStateOf(initialFactor) }
     val scale = servingsBase?.let { servings / it } ?: factor
     LaunchedEffect(scale) { onScaleChanged?.invoke(scale) }
     val listState = rememberLazyListState()
+    LaunchedEffect(detail?.id, cookMode) {
+        if (!cookMode) return@LaunchedEffect
+        val stepCount = detail?.recipeInstructions?.size ?: 0
+        if (initialStepIndex in 1 until stepCount) {
+            val methodOffset = if (wide) 1 else 2
+            listState.scrollToItem(methodOffset + initialStepIndex)
+        }
+        if (onStepInViewChanged != null) {
+            snapshotFlow { stepInView(listState) }
+                .distinctUntilChanged()
+                .collect { idx -> if (idx != null) onStepInViewChanged(idx) }
+        }
+    }
     val bodyStyle = if (cookMode) MaterialTheme.typography.titleLarge.copy(fontFamily = MaterialTheme.typography.bodyLarge.fontFamily)
     else MaterialTheme.typography.bodyLarge
 
@@ -621,10 +699,22 @@ fun RecipeDetailContent(
             detail.recipeIngredient.count { !app.yeschef.data.isHeadingOnly(it) }
         }
         val toggleIngredient: (Int) -> Unit = { index ->
-            checkedIngredients = if (index in checkedIngredients) checkedIngredients - index else checkedIngredients + index
+            val next = if (index in checkedIngredients) checkedIngredients - index else checkedIngredients + index
+            checkedIngredients = next
+            onCheckedIngredientsChanged?.invoke(next)
         }
         val toggleStep: (Int) -> Unit = { index ->
-            completedSteps = if (index in completedSteps) completedSteps - index else completedSteps + index
+            val next = if (index in completedSteps) completedSteps - index else completedSteps + index
+            completedSteps = next
+            onCompletedStepsChanged?.invoke(next)
+        }
+        val updateServings: (Double) -> Unit = { next ->
+            servings = next
+            onServingsChanged?.invoke(next, factor)
+        }
+        val updateFactor: (Double) -> Unit = { next ->
+            factor = next
+            onServingsChanged?.invoke(if (servingsBase != null) servings else null, next)
         }
 
         fun LazyListScope.recipeHeaderItems() {
@@ -758,7 +848,7 @@ fun RecipeDetailContent(
                                         color = colors.onSurfaceVariant,
                                     )
                                 }
-                                ServingsStepper(servingsBase, servings, factor, onServings = { servings = it }, onFactor = { factor = it })
+                                ServingsStepper(servingsBase, servings, factor, onServings = updateServings, onFactor = updateFactor)
                                 Spacer(Modifier.width(4.dp))
                                 Icon(
                                     if (ingredientsOpen) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
@@ -777,7 +867,7 @@ fun RecipeDetailContent(
                 item {
                     Row(Modifier.fillMaxWidth().padding(end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         SectionLabel("Ingredients", Modifier.weight(1f))
-                        ServingsStepper(servingsBase, servings, factor, onServings = { servings = it }, onFactor = { factor = it })
+                        ServingsStepper(servingsBase, servings, factor, onServings = updateServings, onFactor = updateFactor)
                     }
                 }
                 item {
@@ -887,6 +977,47 @@ fun RecipeDetailContent(
                 recipeHeaderItems()
                 ingredientsItems(collapsible = cookMode)
                 methodAndFooterItems()
+            }
+        }
+    }
+}
+
+/** A strip above the timers while a recipe is in cook mode, so it is one tap away from any tab. */
+@Composable
+fun RecipeInProgressBar(
+    session: ActiveCookSession,
+    onReturn: () -> Unit,
+    onStop: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.colorScheme
+    Surface(color = colors.primaryContainer, modifier = modifier.fillMaxWidth().clickable(onClick = onReturn)) {
+        Row(
+            Modifier.padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Outlined.LightMode, contentDescription = null, tint = colors.onPrimaryContainer, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "Cooking · ${session.name}",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = colors.onPrimaryContainer,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                session.progressText()?.let { progress ->
+                    Text(progress, style = MaterialTheme.typography.bodySmall, color = colors.onPrimaryContainer)
+                }
+            }
+            Text(
+                "Return",
+                style = MaterialTheme.typography.labelLarge,
+                color = colors.primary,
+                modifier = Modifier.padding(horizontal = 8.dp),
+            )
+            IconButton(onClick = onStop, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Filled.Close, contentDescription = "Stop cooking", tint = colors.onPrimaryContainer, modifier = Modifier.size(18.dp))
             }
         }
     }
