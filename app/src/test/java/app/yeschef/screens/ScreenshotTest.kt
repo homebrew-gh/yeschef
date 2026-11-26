@@ -244,9 +244,22 @@ class ScreenshotTest {
             MealPlanContent(
                 Sample.mealPlan, Sample.today, null, {}, actions = { SyncIcon() },
                 sideSlugs = setOf("jasmine-rice", "roasted-broccoli", "yogurt-dill-sauce", "garlic-green-beans"),
+                recipeMinutes = mapOf("banana-bread" to 70L, "lasagna" to 75L, "garlic-green-beans" to 15L, "lemon-garlic-chicken" to 45L),
+                onCookRecipe = { _, _ -> },
                 onEditMeal = {}, onAddSide = {}, onRemoveMeal = {}, onSwapDay = {}, onAddToDay = {},
             )
         }
+    }
+
+    /** Meal plan on a tablet: centered editorial column so cards stay well-proportioned. */
+    @Test fun tabletMealPlan() = tablet {
+        MealPlanContent(
+            Sample.mealPlan, Sample.today, null, {}, actions = { SyncIcon() },
+            sideSlugs = setOf("jasmine-rice", "roasted-broccoli", "yogurt-dill-sauce", "garlic-green-beans"),
+            recipeMinutes = mapOf("banana-bread" to 70L, "lasagna" to 75L, "garlic-green-beans" to 15L, "lemon-garlic-chicken" to 45L),
+            onCookRecipe = { _, _ -> },
+            onEditMeal = {}, onAddSide = {}, onRemoveMeal = {}, onSwapDay = {}, onAddToDay = {},
+        )
     }
 
     /** The past week opened: yesterday's dinner that didn't get made, with "Make it today". */

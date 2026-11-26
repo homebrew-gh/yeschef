@@ -11,11 +11,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -39,6 +41,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material.icons.filled.SoupKitchen
 import androidx.compose.material3.FilledTonalButton
 import app.yeschef.AppContainer
+import app.yeschef.data.cook.ActiveCookSession
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
@@ -209,6 +212,12 @@ fun MealPlanScreen(container: AppContainer, onOpenRecipe: (String) -> Unit, onCo
         entries, today, config?.serverUrl, onOpenRecipe,
         actions = { SyncAction(container) }, onCookMeal = onCookMeal, sideSlugs = sideSlugs,
         recipeMinutes = recipeMinutes,
+        onCookRecipe = { slug, name ->
+            if (container.activeCook.value?.slug != slug) {
+                scope.launch { container.setActiveCook(ActiveCookSession(slug = slug, name = name)) }
+            }
+            onOpenRecipe(slug)
+        },
         onEditMeal = { editingToToday = false; editing = it },
         onAddSide = { addingSideTo = it },
         onRemoveMeal = { confirmRemove = it },
@@ -241,6 +250,8 @@ fun MealPlanContent(
     onOpenRecipe: (String) -> Unit,
     actions: @Composable () -> Unit,
     onCookMeal: (MealRequest) -> Unit = {},
+    /** Jump straight into cook mode for a single-dish meal on Today. */
+    onCookRecipe: ((slug: String, name: String) -> Unit)? = null,
     /** Recipes in the Sides chapter, so they can be shown under the main they go with. */
     sideSlugs: Set<String> = emptySet(),
     /** Total cook minutes per recipe slug, for showing a meal's lead time on the card. */
@@ -277,74 +288,93 @@ fun MealPlanContent(
         LazyColumn(
             Modifier.padding(padding).fillMaxSize(),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             if (earlier.isNotEmpty()) {
                 item(key = "earlier") {
-                    EarlierToggle(earlierCount, showEarlier) { showEarlier = !showEarlier }
+                    PlanColumnItem {
+                        EarlierToggle(earlierCount, showEarlier) { showEarlier = !showEarlier }
+                    }
                 }
             }
             if (showEarlier) earlier.forEach { (date, meals) ->
-                item(key = "d-$date") { DayHeader(date, today, past = true) }
+                item(key = "d-$date") { PlanColumnItem { DayHeader(date, today, past = true) } }
                 meals.forEach { meal ->
                     val (mains, sides) = meal.mainsAndSides { it in sideSlugs }
                     val ordered = meal.copy(entries = mains + sides)
                     item(key = "m-$date-${meal.entryType}") {
-                        MealCard(
-                            type = meal.entryType,
-                            mains = mains,
-                            sides = sides,
-                            serverUrl = serverUrl,
-                            onOpenRecipe = onOpenRecipe,
-                            onEdit = onEditMeal?.let { edit -> { edit(ordered) } },
-                            onRemove = onRemoveMeal?.let { remove -> { remove(ordered) } },
-                            onCook = null,
-                            onMakeToday = onMakeToday?.let { make -> { make(ordered, meal.entryType in todayTypes) } },
-                        )
+                        PlanColumnItem {
+                            MealCard(
+                                type = meal.entryType,
+                                mains = mains,
+                                sides = sides,
+                                serverUrl = serverUrl,
+                                onOpenRecipe = onOpenRecipe,
+                                onEdit = onEditMeal?.let { edit -> { edit(ordered) } },
+                                onRemove = onRemoveMeal?.let { remove -> { remove(ordered) } },
+                                onCook = null,
+                                onMakeToday = onMakeToday?.let { make -> { make(ordered, meal.entryType in todayTypes) } },
+                            )
+                        }
                     }
                 }
             }
             if (byDay.isEmpty()) {
                 item {
-                    Text(
-                        "Nothing planned yet. Plan meals in Mealie, or ask your agent to fill in the week.",
-                        Modifier.padding(8.dp),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    PlanColumnItem {
+                        Text(
+                            "Nothing planned yet. Plan meals in Mealie, or ask your agent to fill in the week.",
+                            Modifier.padding(8.dp),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
-            byDay.forEach { (date, meals) ->
+            byDay.entries.forEachIndexed { dayIndex, (date, meals) ->
                 val day = runCatching { LocalDate.parse(date) }.getOrNull()
                 val isToday = day == today
                 item(key = "d-$date") {
-                    DayHeader(
-                        date, today,
-                        onSwap = if (day != null && onSwapDay != null) ({ onSwapDay(day) }) else null,
-                        onAdd = if (day != null && onAddToDay != null) ({ onAddToDay(day) }) else null,
-                    )
+                    PlanColumnItem {
+                        DayHeader(
+                            date, today,
+                            first = dayIndex == 0 && earlier.isEmpty(),
+                            onSwap = if (day != null && onSwapDay != null) ({ onSwapDay(day) }) else null,
+                        )
+                    }
                 }
                 meals.forEach { meal ->
                     // One card per meal: the main on top, its sides under it.
                     val (mains, sides) = meal.mainsAndSides { it in sideSlugs }
                     val ordered = meal.copy(entries = mains + sides)
                     val leadMinutes = ordered.slugs.mapNotNull { recipeMinutes[it] }.maxOrNull()
+                    val singleEntry = if (!ordered.cookable && isToday) {
+                        ordered.entries.firstOrNull { it.recipeSlug != null }
+                    } else null
                     item(key = "m-$date-${meal.entryType}") {
-                        MealCard(
-                            type = meal.entryType,
-                            mains = mains,
-                            sides = sides,
-                            serverUrl = serverUrl,
-                            onOpenRecipe = onOpenRecipe,
-                            onEdit = onEditMeal?.let { edit -> { edit(ordered) } },
-                            onAddSide = onAddSide?.let { add -> { add(ordered) } },
-                            onRemove = onRemoveMeal?.let { remove -> { remove(ordered) } },
-                            onCook = if (ordered.cookable) ({
-                                onCookMeal(MealRequest(mealTitle(ordered), ordered.slugs, day ?: today, meal.entryType))
-                            }) else null,
-                            leadMinutes = leadMinutes,
-                            isToday = isToday,
-                        )
+                        PlanColumnItem {
+                            MealCard(
+                                type = meal.entryType,
+                                mains = mains,
+                                sides = sides,
+                                serverUrl = serverUrl,
+                                onOpenRecipe = onOpenRecipe,
+                                onEdit = onEditMeal?.let { edit -> { edit(ordered) } },
+                                onAddSide = onAddSide?.let { add -> { add(ordered) } },
+                                onRemove = onRemoveMeal?.let { remove -> { remove(ordered) } },
+                                onCook = if (ordered.cookable) ({
+                                    onCookMeal(MealRequest(mealTitle(ordered), ordered.slugs, day ?: today, meal.entryType))
+                                }) else null,
+                                onCookSingle = if (singleEntry != null && onCookRecipe != null) ({
+                                    val slug = singleEntry.recipeSlug!!
+                                    val name = singleEntry.recipeName ?: singleEntry.title ?: slug
+                                    onCookRecipe(slug, name)
+                                }) else null,
+                                dishCount = ordered.slugs.size,
+                                leadMinutes = leadMinutes,
+                                isToday = isToday,
+                            )
+                        }
                     }
                 }
             }
@@ -352,7 +382,15 @@ fun MealPlanContent(
     }
 }
 
-/** A meal: main(s) on top, then "with" and its sides, then Cook when there's more than one recipe. */
+/** Centers each item to a comfortable editorial width on tablets while keeping full-screen touch scroll. */
+@Composable
+private fun PlanColumnItem(content: @Composable () -> Unit) {
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+        Box(Modifier.widthIn(max = 680.dp).fillMaxWidth()) { content() }
+    }
+}
+
+/** A meal: main(s) on top, then "with" and its sides, then Cook. Today gets primary emphasis; future days stay calm. */
 @Composable
 private fun MealCard(
     type: String,
@@ -362,26 +400,32 @@ private fun MealCard(
     onOpenRecipe: (String) -> Unit,
     onEdit: (() -> Unit)?,
     onCook: (() -> Unit)?,
+    onCookSingle: (() -> Unit)? = null,
     onAddSide: (() -> Unit)? = null,
     onRemove: (() -> Unit)? = null,
     onMakeToday: (() -> Unit)? = null,
+    dishCount: Int = 0,
     leadMinutes: Long? = null,
     isToday: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
-    val leadText = leadMinutes?.let { app.yeschef.data.cook.formatShort(it * 60) }
+    val metaText = buildList {
+        if (dishCount > 1) add("$dishCount dishes")
+        leadMinutes?.let { add("~${app.yeschef.data.cook.formatShort(it * 60)}") }
+    }.takeIf { it.isNotEmpty() }?.joinToString(" · ")
+    val hasFooter = onCook != null || onCookSingle != null || onMakeToday != null
     Surface(
         shape = MaterialTheme.shapes.large,
         color = if (isToday) colors.surfaceContainer else colors.surfaceContainerLow,
-        border = if (isToday) BorderStroke(1.dp, colors.primary.copy(alpha = 0.30f)) else null,
+        border = if (isToday) BorderStroke(1.dp, colors.primary.copy(alpha = 0.32f)) else null,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(bottom = if (sides.isEmpty() && onCook == null && onMakeToday == null) 0.dp else 10.dp)) {
+        Column(Modifier.padding(bottom = if (sides.isEmpty() && !hasFooter) 0.dp else 12.dp)) {
             mains.forEachIndexed { i, entry ->
                 MealRow(
-                    entry, serverUrl, onOpenRecipe, imageSize = 64,
+                    entry, serverUrl, onOpenRecipe, imageSize = if (isToday) 76 else 60,
                     label = if (i == 0) type else null,
-                    leadText = if (i == 0) leadText else null,
+                    metaText = if (i == 0) metaText else null,
                     onLongClick = onEdit,
                     onMore = if (i == 0) onEdit else null,
                     onAddSide = if (i == 0) onAddSide else null,
@@ -404,14 +448,36 @@ private fun MealCard(
                 }
             }
             if (onCook != null) {
-                FilledTonalButton(onClick = onCook, modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp).padding(top = 8.dp)) {
+                val buttonMod = Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(top = 10.dp)
+                if (isToday) {
+                    Button(onClick = onCook, modifier = buttonMod) {
+                        Icon(Icons.Filled.SoupKitchen, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Cook this meal")
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = onCook,
+                        border = BorderStroke(1.dp, colors.outlineVariant),
+                        modifier = buttonMod,
+                    ) {
+                        Icon(Icons.Filled.SoupKitchen, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Cook this meal")
+                    }
+                }
+            } else if (onCookSingle != null) {
+                FilledTonalButton(
+                    onClick = onCookSingle,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(top = 10.dp),
+                ) {
                     Icon(Icons.Filled.SoupKitchen, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Cook this meal together")
+                    Text("Let's cook")
                 }
             }
             if (onMakeToday != null) {
-                OutlinedButton(onClick = onMakeToday, modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp).padding(top = 8.dp)) {
+                OutlinedButton(onClick = onMakeToday, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(top = 10.dp)) {
                     Icon(Icons.Filled.Today, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Make it today")
@@ -429,7 +495,7 @@ private fun MealRow(
     onOpenRecipe: (String) -> Unit,
     imageSize: Int,
     label: String?,
-    leadText: String? = null,
+    metaText: String? = null,
     compact: Boolean = false,
     onLongClick: (() -> Unit)? = null,
     onMore: (() -> Unit)? = null,
@@ -445,7 +511,7 @@ private fun MealRow(
     Row(
         Modifier.fillMaxWidth()
             .combinedClickable(onLongClick = onLongClick) { slug?.let(onOpenRecipe) }
-            .padding(horizontal = 10.dp, vertical = if (compact) 6.dp else 10.dp),
+            .padding(horizontal = 12.dp, vertical = if (compact) 6.dp else 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (entry.recipeId != null) {
@@ -458,8 +524,8 @@ private fun MealRow(
                     Surface(shape = MaterialTheme.shapes.small, color = colors.tertiaryContainer) {
                         Text(label.uppercase(), style = OverlineStyle, color = colors.onTertiaryContainer, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
                     }
-                    if (leadText != null) {
-                        Text("~$leadText", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
+                    if (metaText != null) {
+                        Text(metaText, style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
                     }
                 }
                 Spacer(Modifier.size(6.dp))
@@ -519,10 +585,13 @@ private fun MealRow(
 }
 
 @Composable
-private fun DayHeader(isoDate: String, today: LocalDate, onSwap: (() -> Unit)? = null, onAdd: (() -> Unit)? = null, past: Boolean = false) {
+private fun DayHeader(isoDate: String, today: LocalDate, first: Boolean = false, onSwap: (() -> Unit)? = null, past: Boolean = false) {
     val date = runCatching { LocalDate.parse(isoDate) }.getOrNull()
     val isToday = date == today
-    Row(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 2.dp, start = 4.dp), verticalAlignment = Alignment.Bottom) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = if (first) 10.dp else 20.dp, bottom = 2.dp, start = 4.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
         Text(
             when (date) {
                 null -> isoDate
@@ -549,13 +618,14 @@ private fun DayHeader(isoDate: String, today: LocalDate, onSwap: (() -> Unit)? =
         }
         Spacer(Modifier.weight(1f))
         if (onSwap != null) {
-            IconButton(onClick = onSwap, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Filled.SwapVert, "Swap with another day", tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(20.dp))
-            }
-        }
-        if (onAdd != null) {
-            IconButton(onClick = onAdd, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Filled.Add, "Add to this day", tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(20.dp))
+            TextButton(
+                onClick = onSwap,
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                modifier = Modifier.height(32.dp),
+            ) {
+                Icon(Icons.Filled.SwapVert, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Swap", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
