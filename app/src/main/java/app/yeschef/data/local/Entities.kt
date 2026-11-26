@@ -97,5 +97,7 @@ data class PendingOpEntity(
         const val MEAL_ADD = "meal_add"
         /** Save cook-mode notes to a recipe's timeline: itemId is the recipe id, listId holds a TimelineNote as JSON. */
         const val COOK_NOTES = "cook_notes"
+        /** Permanently delete a recipe on the server: itemId is the slug; the local row is already gone. */
+        const val DELETE_RECIPE = "delete_recipe"
     }
 }

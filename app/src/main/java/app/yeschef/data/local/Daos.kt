@@ -44,6 +44,9 @@ abstract class RecipeDao {
     @Query("UPDATE recipes SET lastMade = :iso WHERE slug = :slug")
     abstract suspend fun setLastMade(slug: String, iso: String)
 
+    @Query("DELETE FROM recipes WHERE slug = :slug")
+    abstract suspend fun delete(slug: String)
+
     @Query("DELETE FROM recipes WHERE id NOT IN (:keep)")
     abstract suspend fun deleteAllExcept(keep: List<String>)
 
@@ -125,7 +128,7 @@ abstract class ShoppingDao {
     abstract suspend fun pendingKindCount(itemId: String, kind: String): Int
 
     /** Queued edits that name a recipe by slug follow it when Mealie renames it. */
-    @Query("UPDATE pending_ops SET itemId = :newSlug WHERE itemId = :oldSlug AND kind IN ('last_made', 'set_organizers')")
+    @Query("UPDATE pending_ops SET itemId = :newSlug WHERE itemId = :oldSlug AND kind IN ('last_made', 'set_organizers', 'delete_recipe')")
     abstract suspend fun renameRecipeOps(oldSlug: String, newSlug: String)
 
     @Insert

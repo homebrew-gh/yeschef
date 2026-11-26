@@ -97,6 +97,10 @@ interface MealieApi {
     @PATCH("recipes/{slug}")
     suspend fun patchRecipe(@Path("slug") slug: String, @Body body: JsonObject): ResponseBody
 
+    /** Permanently deletes a recipe in Mealie. */
+    @DELETE("recipes/{slug}")
+    suspend fun deleteRecipe(@Path("slug") slug: String): ResponseBody
+
     /** Adds an entry to a recipe's timeline (the cook notes saved from cook mode). */
     @POST("recipes/timeline/events")
     suspend fun createTimelineEvent(@Body body: JsonObject): ResponseBody

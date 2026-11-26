@@ -356,6 +356,14 @@ class Repository(
         db.shopping().enqueue(PendingOpEntity(kind = PendingOpEntity.LAST_MADE, itemId = slug, listId = now))
     }
 
+    /** Removes a recipe locally right away and queues its deletion in Mealie for the next sync. */
+    suspend fun deleteRecipe(slug: String, recipeId: String?) {
+        db.recipes().delete(slug)
+        db.shopping().deleteOpsFor(slug)
+        recipeId?.let { db.shopping().deleteOpsFor(it) }
+        db.shopping().enqueue(PendingOpEntity(kind = PendingOpEntity.DELETE_RECIPE, itemId = slug, listId = ""))
+    }
+
     // ---- Meal plan edits (queued) ----
     // Shown at once and sent with the next sync, like shopping edits. Entries added
     // offline have a negative id until Mealie has them; edits to those just change the
@@ -702,6 +710,7 @@ class Repository(
             try {
                 when {
                     op.kind == PendingOpEntity.LAST_MADE -> api.setLastMade(op.itemId, LastMadeBody(op.listId))
+                    op.kind == PendingOpEntity.DELETE_RECIPE -> api.deleteRecipe(op.itemId)
                     op.kind == PendingOpEntity.COOK_NOTES -> pushCookNotes(api, op.itemId, op.listId)
                     op.kind == PendingOpEntity.DELETE_ITEM -> api.deleteShoppingItem(op.itemId)
                     op.kind == PendingOpEntity.SET_ORGANIZERS -> pushOrganizers(api, op.itemId, op.listId)

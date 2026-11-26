@@ -80,8 +80,8 @@ your own Mealie server.
   shopping list properly. Leave a time blank if you don't know it; cook time 0 means no cooking.
 - **Add any recipe to any grocery list.** Pick the list (or make a new one), choose the servings and
   untick what you already have. Works offline; Mealie scales and merges the lines on the next sync.
-- **Share, print or edit any recipe.** The **⋮** menu in a recipe's top bar lets you edit the recipe, send it as text (messages, email,
-  notes) or as a PDF, or open Android's print dialog (which can also save a PDF). Amounts match the
+- **Share, print, edit or delete any recipe.** The **⋮** menu in a recipe's top bar lets you edit the recipe, send it as text (messages, email,
+  notes) or as a PDF, open Android's print dialog (which can also save a PDF), or permanently delete the recipe after confirming. Amounts match the
   servings you've picked.
 - **Meal plan.** The next three weeks; planned recipes are downloaded ahead so they open offline. "Past week" at the top opens the last seven days, so a meal that didn't get made can be opened or moved to today ("Make it today").
 - **Phone and tablet.** On a tablet, a recipe opens as a two-pane cookbook spread — ingredients on the left, method steps on the right — in both reading and cook mode.
