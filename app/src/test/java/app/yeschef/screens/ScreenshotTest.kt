@@ -135,10 +135,24 @@ class ScreenshotTest {
         RecipeGrid(Sample.recipes, null, null, {}, actions = { SyncIcon() }, today = Sample.today, initialChapter = "Mains", initialProtein = "Seafood")
     }
 
+    /** First shake on the Cookbook: pick a chapter, then shake again to roll. */
+    @Test fun dicePicker() = phone(tab = 1) {
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f)).padding(24.dp), contentAlignment = Alignment.Center) {
+            app.yeschef.ui.recipes.DicePickerCard(
+                choices = listOf("Mains" to 3, "Sides" to 3, "Breakfast" to 1, "Baking" to 1, null to 9),
+                selected = "Mains",
+                shakeHint = true,
+                onSelect = {},
+                onRoll = {},
+                onDismiss = {},
+            )
+        }
+    }
+
     /** Where the dice lands: the recipe card that pops up over the cookbook. */
     @Test fun diceRoll() = phone(tab = 1) {
         Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f)).padding(24.dp), contentAlignment = Alignment.Center) {
-            app.yeschef.ui.recipes.RolledCard(Sample.recipes.first(), null, Sample.today, onOpen = {}, onRollAgain = {})
+            app.yeschef.ui.recipes.RolledCard(Sample.recipes.first(), null, Sample.today, onOpen = {}, onRollAgain = {}, onChangeChapter = {})
         }
     }
 

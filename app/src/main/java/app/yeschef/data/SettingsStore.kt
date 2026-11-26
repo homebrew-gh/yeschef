@@ -1,6 +1,7 @@
 package app.yeschef.data
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -29,6 +30,7 @@ class SettingsStore(private val context: Context) {
     private val dayListsKey = stringPreferencesKey("shopping_day_lists")
     private val dayAddToKey = stringPreferencesKey("shopping_day_add_to")
     private val diceKey = stringPreferencesKey("dice_chapter")
+    private val shakeRollKey = booleanPreferencesKey("shake_to_roll")
     private val lastListKey = stringPreferencesKey("last_shopping_list")
     private val activeCookKey = stringPreferencesKey("active_cook_session")
 
@@ -43,6 +45,13 @@ class SettingsStore(private val context: Context) {
 
     suspend fun saveDiceChapter(chapter: String?) {
         context.dataStore.edit { it[diceKey] = chapter ?: ANY_CHAPTER }
+    }
+
+    /** Whether shaking on the Cookbook page opens and rolls the recipe dice. On by default. */
+    val shakeToRoll: Flow<Boolean> = context.dataStore.data.map { prefs -> prefs[shakeRollKey] ?: true }
+
+    suspend fun saveShakeToRoll(enabled: Boolean) {
+        context.dataStore.edit { it[shakeRollKey] = enabled }
     }
 
     /** The lists picked for Shopping Day, as Mealie list ids. Empty until picked. */
