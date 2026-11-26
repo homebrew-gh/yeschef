@@ -127,4 +127,53 @@ class StepIngredientsTest {
         val perStep = listOf(listOf(1), listOf(0, 1), emptyList(), listOf(0, 2))
         assertEquals(mapOf(1 to 0, 0 to 1, 2 to 3), firstSteps(perStep))
     }
+
+    @Test fun explicitMealieLinksKeepEmptyStepsEmpty() {
+        val ings = listOf(
+            line("1 1/2 lb flank steak", ref = "a"),
+            line("2 cups jasmine rice", ref = "b"),
+            IngredientLine("h", null, "For serving", isHeadingOnly = true),
+        )
+        val result = ingredientsForSteps(
+            ings,
+            listOf(
+                step("Sear the steak in a hot skillet.", "a", "h"),
+                step("Rest the steak 10 minutes, slice against the grain, and serve over the rice."),
+            ),
+        )
+        // Step 2 intentionally has no links; YesChef shouldn't fall back to text matching on it,
+        // and heading-only lines should never appear even if referenced.
+        assertEquals(listOf(listOf(0), emptyList<Int>()), result)
+    }
+
+    @Test fun leavesFlakesSeedsAndProseVerbsDoNotFalseMatch() {
+        val ings = listOf(
+            line("2 bay leaves"),
+            line("1/2 tsp red pepper flakes"),
+            line("1 tbsp sesame seeds"),
+            line("1 tbsp tomato paste"),
+            line("1 cup instant rice"),
+            line("2 tbsp fish sauce"),
+            line("2 tbsp garlic butter"),
+            line("1 lb chicken thighs cut into 1-inch pieces"),
+        )
+        val result = ingredientsForSteps(
+            ings,
+            listOf(
+                step("Set the Instant Pot to Saute and leave undisturbed until the fish flakes easily."),
+                step("Remove the seeds from the jalapeno and mash into a smooth paste."),
+                step("Roll out to 1/4-inch thickness and roast the garlic."),
+                step("Add the bay leaves, red pepper flakes, sesame seeds, tomato paste, fish sauce, garlic butter, and chicken."),
+            ),
+        )
+        assertEquals(
+            listOf(
+                emptyList<Int>(),
+                emptyList<Int>(),
+                emptyList<Int>(),
+                listOf(0, 1, 2, 3, 5, 6, 7),
+            ),
+            result,
+        )
+    }
 }
